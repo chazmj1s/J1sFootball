@@ -22,6 +22,15 @@ namespace SaturdayPulse.ViewModels
         private string        _statusMessage = "Loading...";
         private string        _emptyMessage = "Loading...";
 
+        // ── Teams | Conferences sub-view (2026-09-26) ─────────────────────
+        private string        _selectedView          = "Teams";
+        private bool          _isRefreshing;
+        private ObservableCollection<ConferenceSummary> _conferenceSummaries = new();
+        private ObservableCollection<Top25Card> _top25Left  = new();
+        private ObservableCollection<Top25Card> _top25Right = new();
+        private RankingSort   _confSort              = RankingSort.Rank;
+        private bool          _isConfSortAscending   = true;
+
 
         public PowerRankingsViewModel(
             GameDataApiService apiService,
@@ -40,7 +49,7 @@ namespace SaturdayPulse.ViewModels
             // call inside it is offloaded via its own Task.Run, and the continuation
             // (ApplyFiltersAndSort) returns to the main thread.
             LoadDataCommand = new Microsoft.Maui.Controls.Command(() => _ = LoadDataAsync());
-            RefreshCommand  = new Microsoft.Maui.Controls.Command(() => _ = LoadDataAsync(forceReload: true));
+            RefreshCommand  = new Microsoft.Maui.Controls.Command(async () => await RefreshAsync());
             ApplyFilterCommand = new Microsoft.Maui.Controls.Command<string>(ApplyFilter);
             ApplySortCommand      = new Microsoft.Maui.Controls.Command<RankingSort>(ApplySort);
             SortColumnCommand     = new Microsoft.Maui.Controls.Command<string>(SortByColumn);
@@ -180,6 +189,24 @@ namespace SaturdayPulse.ViewModels
                 _navState.RequestTeamPreview(teamId);
             });
 
+            SelectViewCommand = new Microsoft.Maui.Controls.Command<string>(view =>
+            {
+                if (string.IsNullOrWhiteSpace(view)) return;
+                SelectedView = view;
+            });
+
+            // Conference row tap — flip back to Teams filtered to that conference.
+            // Both SelectedConference and ApplyFiltersAndSort are set/called here;
+            // if the setter also raises FilterChanged(Conference), the second
+            // refilter is redundant but harmless.
+            NavigateToConferenceCommand = new Microsoft.Maui.Controls.Command<string>(key =>
+            {
+                if (string.IsNullOrWhiteSpace(key)) return;
+                _navState.SelectedConference = key;
+                SelectedView = "Teams";
+                ApplyFiltersAndSort();
+            });
+
             _navState.PropertyChanged += OnNavStateChanged;
             _followService.TeamFollowChanged += OnTeamFollowChanged;
             _rankingsCache.CacheUpdated += OnRankingsCacheUpdated;
@@ -200,6 +227,29 @@ namespace SaturdayPulse.ViewModels
             set { _filteredTeams = value; OnPropertyChanged(); }
         }
 
+        public ObservableCollection<ConferenceSummary> ConferenceSummaries
+        {
+            get => _conferenceSummaries;
+            set { _conferenceSummaries = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>Top 25 view, left column — OverallRank 1–12.</summary>
+        public ObservableCollection<Top25Card> Top25Left
+        {
+            get => _top25Left;
+            set { _top25Left = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>Top 25 view, right column — OverallRank 13–25.</summary>
+        public ObservableCollection<Top25Card> Top25Right
+        {
+            get => _top25Right;
+            set { _top25Right = value; OnPropertyChanged(); }
+        }
+
+        public bool HasTop25   => _top25Left.Count > 0;
+        public bool HasNoTop25 => !HasTop25;
+
         // ── Bindable properties ───────────────────────────────────────────
 
         public bool IsBusy
@@ -207,6 +257,36 @@ namespace SaturdayPulse.ViewModels
             get => _isBusy;
             set { _isBusy = value; OnPropertyChanged(); }
         }
+
+        /// <summary>
+        /// Dedicated pull-to-refresh flag, bound OneWay to RefreshView.IsRefreshing.
+        /// Deliberately separate from IsBusy — see the RefreshView anti-pattern fix
+        /// on Schedule/Settings (2026-09-12).
+        /// </summary>
+        public bool IsRefreshing
+        {
+            get => _isRefreshing;
+            set { _isRefreshing = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>"Teams", "Top25" or "Conferences" — mirrors PostseasonViewModel.SelectedView.</summary>
+        public string SelectedView
+        {
+            get => _selectedView;
+            set
+            {
+                if (_selectedView == value) return;
+                _selectedView = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsTeamsView));
+                OnPropertyChanged(nameof(IsTop25View));
+                OnPropertyChanged(nameof(IsConferencesView));
+            }
+        }
+
+        public bool IsTeamsView       => _selectedView == "Teams";
+        public bool IsTop25View       => _selectedView == "Top25";
+        public bool IsConferencesView => _selectedView == "Conferences";
 
         public string SelectedFilterDisplay
         {
@@ -287,10 +367,25 @@ namespace SaturdayPulse.ViewModels
         public ICommand ToggleScheduleExpandCommand { get; }
         public ICommand ToggleFollowCommand { get; }
         public ICommand NavigateToTeamCommand { get; }
+        public ICommand SelectViewCommand { get; }
+        public ICommand NavigateToConferenceCommand { get; }
 
         // ── Load ──────────────────────────────────────────────────────────
 
         private CancellationTokenSource? _loadCts;
+
+        private async Task RefreshAsync()
+        {
+            IsRefreshing = true;
+            try
+            {
+                await LoadDataAsync(forceReload: true);
+            }
+            finally
+            {
+                IsRefreshing = false;
+            }
+        }
 
         public async Task LoadDataAsync(bool forceReload = false)
         {
@@ -374,6 +469,12 @@ namespace SaturdayPulse.ViewModels
 
         public void SortByColumn(string columnName)
         {
+            if (IsConferencesView)
+            {
+                SortConferencesByColumn(columnName);
+                return;
+            }
+
             var newSort = columnName switch
             {
                 "Rank"       => RankingSort.Rank,
@@ -499,6 +600,185 @@ namespace SaturdayPulse.ViewModels
             }
 
             FilteredTeams = new ObservableCollection<TeamRanking>(result);
+
+            BuildConferenceSummaries();
+            BuildTop25();
+        }
+
+        // ── Top 25 view ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// National top 25 by OverallRank (ordinal of Rating) from _allTeams.
+        /// Ignores the tier filter, conference picker and favorites-first.
+        /// Split 1–12 left / 13–25 right; row alternation is per column.
+        /// </summary>
+        private void BuildTop25()
+        {
+            var top = _allTeams
+                .Where(t => t.OverallRank > 0 && t.OverallRank <= 25)
+                .OrderBy(t => t.OverallRank)
+                .ToList();
+
+            static Top25Card ToCard(TeamRanking t, int index) => new()
+            {
+                TeamID        = t.TeamID,
+                Rank          = t.OverallRank,
+                TeamName      = t.TeamName,
+                ConferenceAbbr = t.ConferenceAbbr,
+                Record        = t.Record,
+                DisplayRating = t.DisplayRank,
+                IsOddRow      = index % 2 == 1
+            };
+
+            var left  = top.Where(t => t.OverallRank <= 12).Select(ToCard).ToList();
+            var right = top.Where(t => t.OverallRank >= 13).Select(ToCard).ToList();
+
+            Top25Left  = new ObservableCollection<Top25Card>(left);
+            Top25Right = new ObservableCollection<Top25Card>(right);
+            OnPropertyChanged(nameof(HasTop25));
+            OnPropertyChanged(nameof(HasNoTop25));
+        }
+
+        // ── Conferences view ──────────────────────────────────────────────
+
+        /// <summary>Conference name/abbreviation check — Independent is a
+        /// conference, not a tier (engineering notes).</summary>
+        private static bool IsIndependent(TeamRanking t) =>
+            (t.Conference?.Contains("Independent", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (t.ConferenceAbbr?.Contains("Independent", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            string.Equals(t.ConferenceAbbr, "Ind", StringComparison.OrdinalIgnoreCase);
+
+        private static string? ConferenceKeyOf(TeamRanking t) =>
+            !string.IsNullOrWhiteSpace(t.ConferenceAbbr) ? t.ConferenceAbbr
+            : !string.IsNullOrWhiteSpace(t.Conference)   ? t.Conference
+            : null;
+
+        /// <summary>
+        /// Builds per-conference plain means from _allTeams. Ignores the global
+        /// conference picker and favorites-first; honours only the P4/G5 tier
+        /// filter. Independents are always omitted.
+        /// </summary>
+        private void BuildConferenceSummaries()
+        {
+            var source = _allTeams.Where(t => !IsIndependent(t) && ConferenceKeyOf(t) != null);
+
+            source = _currentFilter switch
+            {
+                RankingFilter.P4 => source.Where(t => t.Tier == "P4"),
+                RankingFilter.G5 => source.Where(t => t.Tier == "G5"),
+                _                => source
+            };
+
+            var summaries = source
+                .GroupBy(t => ConferenceKeyOf(t)!, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var teams   = g.ToList();
+                    var count   = teams.Count;
+                    var ratings = teams.Where(t => t.Ranking.HasValue).Select(t => t.Ranking!.Value).ToList();
+                    var sos     = teams.Where(t => t.CombinedSOS.HasValue).Select(t => t.CombinedSOS!.Value).ToList();
+                    var rosters = teams.Where(t => t.RosterRank.HasValue).Select(t => t.RosterRank!.Value).ToList();
+
+                    var tier = teams
+                        .Where(t => !string.IsNullOrWhiteSpace(t.Tier))
+                        .GroupBy(t => t.Tier)
+                        .OrderByDescending(tg => tg.Count())
+                        .Select(tg => tg.Key)
+                        .FirstOrDefault();
+
+                    var name = teams
+                        .Select(t => t.Conference)
+                        .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? g.Key;
+
+                    return new ConferenceSummary
+                    {
+                        ConferenceKey      = g.Key,
+                        ConferenceName     = name,
+                        Tier               = tier,
+                        TeamCount          = count,
+                        AvgWins            = (double)teams.Sum(t => t.Wins)            / count,
+                        AvgLosses          = (double)teams.Sum(t => t.Losses)          / count,
+                        AvgProjectedWins   = (double)teams.Sum(t => t.ProjectedWins)   / count,
+                        AvgProjectedLosses = (double)teams.Sum(t => t.ProjectedLosses) / count,
+                        AvgRating          = ratings.Count > 0 ? ratings.Average() : null,
+                        AvgSOS             = sos.Count     > 0 ? sos.Average()     : null,
+                        AvgRosterRank      = rosters.Count > 0 ? rosters.Average() : null,
+                        RosterCoverage     = rosters.Count
+                    };
+                })
+                .ToList();
+
+            // Conference rank: AvgRating desc (null last), CombinedSOS tiebreak.
+            var ranked = summaries
+                .OrderBy(c => c.AvgRating.HasValue ? 0 : 1)
+                .ThenByDescending(c => c.AvgRating ?? 0)
+                .ThenByDescending(c => c.AvgSOS ?? 0)
+                .ToList();
+            for (int i = 0; i < ranked.Count; i++)
+                ranked[i].ConferenceRank = i + 1;
+
+            IOrderedEnumerable<ConferenceSummary> sorted = _confSort switch
+            {
+                RankingSort.Conference => _isConfSortAscending
+                    ? summaries.OrderBy(c => c.ConferenceName)
+                    : summaries.OrderByDescending(c => c.ConferenceName),
+                RankingSort.PowerRating => _isConfSortAscending
+                    ? summaries.OrderBy(c => c.AvgRating ?? 0)
+                    : summaries.OrderByDescending(c => c.AvgRating ?? 0),
+                RankingSort.Record => _isConfSortAscending
+                    ? summaries.OrderBy(c => c.ProjectedWinPct).ThenBy(c => c.AvgSOS ?? 0)
+                               .ThenBy(c => c.AvgRosterRank ?? double.MaxValue)
+                    : summaries.OrderByDescending(c => c.ProjectedWinPct).ThenByDescending(c => c.AvgSOS ?? 0)
+                               .ThenBy(c => c.AvgRosterRank ?? double.MaxValue),
+                RankingSort.SOS => _isConfSortAscending
+                    ? summaries.OrderBy(c => c.AvgSOS ?? 0)
+                    : summaries.OrderByDescending(c => c.AvgSOS ?? 0),
+                // Same null-pinning as the Teams RosterRank sort — no data sorts
+                // last in either direction.
+                RankingSort.RosterRank => _isConfSortAscending
+                    ? summaries.OrderBy(c => c.AvgRosterRank.HasValue ? 0 : 1)
+                               .ThenBy(c => c.AvgRosterRank ?? double.MaxValue)
+                    : summaries.OrderBy(c => c.AvgRosterRank.HasValue ? 0 : 1)
+                               .ThenByDescending(c => c.AvgRosterRank ?? double.MaxValue),
+                _ => _isConfSortAscending
+                    ? summaries.OrderBy(c => c.ConferenceRank)
+                    : summaries.OrderByDescending(c => c.ConferenceRank)
+            };
+
+            var result = sorted.ToList();
+            for (int i = 0; i < result.Count; i++)
+                result[i].IsOddRow = i % 2 == 1;
+
+            ConferenceSummaries = new ObservableCollection<ConferenceSummary>(result);
+        }
+
+        private void SortConferencesByColumn(string columnName)
+        {
+            var newSort = columnName switch
+            {
+                "Rank"       => RankingSort.Rank,
+                "Conference" => RankingSort.Conference,
+                "Record"     => RankingSort.Record,
+                "Rating"     => RankingSort.PowerRating,
+                "SOS"        => RankingSort.SOS,
+                "RosterRank" => RankingSort.RosterRank,
+                _            => RankingSort.Rank
+            };
+
+            if (_confSort == newSort)
+                _isConfSortAscending = !_isConfSortAscending;
+            else
+            {
+                _confSort = newSort;
+                _isConfSortAscending = newSort switch
+                {
+                    RankingSort.PowerRating => false,
+                    RankingSort.SOS         => false,
+                    _                       => true
+                };
+            }
+
+            BuildConferenceSummaries();
         }
 
         private async void OnNavStateChanged(object sender, PropertyChangedEventArgs e)

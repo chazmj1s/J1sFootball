@@ -10,12 +10,81 @@
              Shell.NavBarIsVisible="False">
 
 
-  <Grid RowDefinitions="Auto,*,24">
+  <Grid RowDefinitions="Auto,Auto,*,24">
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ROW 0: Column headers                               -->
+    <!-- ROW 0: Teams | Top 25 | Conferences — mirrors      -->
+    <!--        Postseason's Title Games | Playoffs | Bowls  -->
     <!-- ═══════════════════════════════════════════════════ -->
     <Grid Grid.Row="0"
+          ColumnDefinitions="*,*,*"
+          BackgroundColor="{AppThemeBinding Light=#F8F8F8, Dark=#1E1E1E}"
+          Padding="8,4">
+
+      <Border Grid.Column="0" HorizontalOptions="Center" VerticalOptions="Center" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SelectViewCommand}" CommandParameter="Teams" />
+        </Border.GestureRecognizers>
+        <Label Text="Teams"
+               FontSize="14" FontAttributes="Bold">
+          <Label.Triggers>
+            <DataTrigger TargetType="Label" Binding="{Binding IsTeamsView}" Value="True">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              <Setter Property="TextDecorations" Value="Underline" />
+            </DataTrigger>
+            <DataTrigger TargetType="Label" Binding="{Binding IsTeamsView}" Value="False">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              <Setter Property="TextDecorations" Value="None" />
+            </DataTrigger>
+          </Label.Triggers>
+        </Label>
+      </Border>
+
+      <Border Grid.Column="1" HorizontalOptions="Center" VerticalOptions="Center" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SelectViewCommand}" CommandParameter="Top25" />
+        </Border.GestureRecognizers>
+        <Label Text="Top 25"
+               FontSize="14" FontAttributes="Bold">
+          <Label.Triggers>
+            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="True">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              <Setter Property="TextDecorations" Value="Underline" />
+            </DataTrigger>
+            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="False">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              <Setter Property="TextDecorations" Value="None" />
+            </DataTrigger>
+          </Label.Triggers>
+        </Label>
+      </Border>
+
+      <Border Grid.Column="2" HorizontalOptions="Center" VerticalOptions="Center" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SelectViewCommand}" CommandParameter="Conferences" />
+        </Border.GestureRecognizers>
+        <Label Text="Conferences"
+               FontSize="14" FontAttributes="Bold">
+          <Label.Triggers>
+            <DataTrigger TargetType="Label" Binding="{Binding IsConferencesView}" Value="True">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              <Setter Property="TextDecorations" Value="Underline" />
+            </DataTrigger>
+            <DataTrigger TargetType="Label" Binding="{Binding IsConferencesView}" Value="False">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              <Setter Property="TextDecorations" Value="None" />
+            </DataTrigger>
+          </Label.Triggers>
+        </Label>
+      </Border>
+
+    </Grid>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ROW 1a: Team column headers                         -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <Grid Grid.Row="1"
+          IsVisible="{Binding IsTeamsView}"
           Padding="4,3"
           BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceAltLight}, Dark={StaticResource SurfaceAltDark}}"
           ColumnDefinitions="52,22,*,76,54,50,54">
@@ -68,12 +137,71 @@
 
     </Grid>
 
+
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ROW 1: Rankings list with pull-to-refresh           -->
+    <!-- ROW 1b: Conference column headers                   -->
+    <!-- Same SortColumnCommand — the ViewModel routes by    -->
+    <!-- IsConferencesView.                                  -->
     <!-- ═══════════════════════════════════════════════════ -->
-    <RefreshView Grid.Row="1"
+    <Grid Grid.Row="1"
+          IsVisible="{Binding IsConferencesView}"
+          Padding="4,3"
+          BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceAltLight}, Dark={StaticResource SurfaceAltDark}}"
+          ColumnDefinitions="52,*,54,50,54">
+
+      <Border Grid.Column="0" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SortColumnCommand}" CommandParameter="Rank"/>
+        </Border.GestureRecognizers>
+        <Label Text="Rank ↕" FontAttributes="Bold" FontSize="11" LineBreakMode="NoWrap" />
+      </Border>
+      <Border Grid.Column="1" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SortColumnCommand}" CommandParameter="Conference"/>
+        </Border.GestureRecognizers>
+        <Label Text="Conference ↕" FontAttributes="Bold" FontSize="11" LineBreakMode="NoWrap" />
+      </Border>
+      <!-- Non-sortable caption over the averaged columns to its right -->
+      <Label Grid.Column="1" Text="Averages"
+             FontAttributes="Bold,Italic" FontSize="11" LineBreakMode="NoWrap"
+             HorizontalOptions="End" VerticalOptions="Center" Margin="0,0,6,0"
+             TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}" />
+      <Border Grid.Column="2" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SortColumnCommand}" CommandParameter="Rating"/>
+        </Border.GestureRecognizers>
+        <Label Text="Rating ↕" FontAttributes="Bold" FontSize="11" LineBreakMode="NoWrap" />
+      </Border>
+      <Border Grid.Column="3" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+        <Border.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SortColumnCommand}" CommandParameter="SOS"/>
+        </Border.GestureRecognizers>
+        <Label Text="SOS ↕" FontAttributes="Bold" FontSize="11" LineBreakMode="NoWrap" />
+      </Border>
+      <VerticalStackLayout Grid.Column="4" Spacing="0" HorizontalOptions="Center">
+        <VerticalStackLayout.GestureRecognizers>
+          <TapGestureRecognizer Command="{Binding SortColumnCommand}" CommandParameter="RosterRank"/>
+        </VerticalStackLayout.GestureRecognizers>
+        <Label Text="Roster" FontAttributes="Bold" FontSize="9" HorizontalTextAlignment="Center" LineBreakMode="NoWrap" />
+        <Label Text="Rank ↕" FontAttributes="Bold" FontSize="9" HorizontalTextAlignment="Center" LineBreakMode="NoWrap" />
+      </VerticalStackLayout>
+
+    </Grid>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ROW 2a: Team rankings list with pull-to-refresh     -->
+    <!-- IsRefreshing bound OneWay to a dedicated property — -->
+    <!-- never IsBusy (see Schedule/Settings fix 2026-09-12) -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <RefreshView Grid.Row="2"
                  Command="{Binding RefreshCommand}"
-                 IsRefreshing="False">
+                 IsRefreshing="{Binding IsRefreshing, Mode=OneWay}"
+                 IsVisible="False">
+      <RefreshView.Triggers>
+        <DataTrigger TargetType="RefreshView" Binding="{Binding IsTeamsView}" Value="True">
+          <Setter Property="IsVisible" Value="True" />
+        </DataTrigger>
+      </RefreshView.Triggers>
 
       <CollectionView ItemsSource="{Binding FilteredTeams}"
                       SelectionMode="None"
@@ -752,9 +880,254 @@
     </RefreshView>
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ROW 2: Status bar                                   -->
+    <!-- ROW 2c: Top 25 — two columns, 1–12 left, 13–25 right -->
+    <!-- National by OverallRank; ignores filters/favorites  -->
     <!-- ═══════════════════════════════════════════════════ -->
-    <Grid Grid.Row="2" HeightRequest="24" ColumnDefinitions="*,Auto"
+    <RefreshView Grid.Row="2"
+                 Command="{Binding RefreshCommand}"
+                 IsRefreshing="{Binding IsRefreshing, Mode=OneWay}"
+                 IsVisible="False">
+      <RefreshView.Triggers>
+        <DataTrigger TargetType="RefreshView" Binding="{Binding IsTop25View}" Value="True">
+          <Setter Property="IsVisible" Value="True" />
+        </DataTrigger>
+      </RefreshView.Triggers>
+
+      <ScrollView>
+        <VerticalStackLayout Spacing="0">
+
+          <Label Text="{Binding EmptyMessage}"
+                 IsVisible="{Binding HasNoTop25}"
+                 FontSize="14" HorizontalOptions="Center" Margin="0,30,0,0"
+                 TextColor="{AppThemeBinding Light=#B3000000, Dark=#B3FFFFFF}" />
+
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="4" Padding="4,4"
+                IsVisible="{Binding HasTop25}">
+
+            <!-- Left: 1–12 -->
+            <VerticalStackLayout Grid.Column="0" Spacing="0"
+                                 BindableLayout.ItemsSource="{Binding Top25Left}">
+              <BindableLayout.ItemTemplate>
+                <DataTemplate x:DataType="models:Top25Card">
+                <Grid Padding="4,5" ColumnDefinitions="22,*" RowDefinitions="Auto,Auto" ColumnSpacing="4">
+                  <Grid.Triggers>
+                    <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="True">
+                      <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFF8F0, Dark=#2A2A2A}" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="False">
+                      <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=White, Dark=#1A1A1A}" />
+                    </DataTrigger>
+                  </Grid.Triggers>
+
+                  <!-- Small rank badge -->
+                  <Grid Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+                        HeightRequest="20" WidthRequest="22"
+                        HorizontalOptions="Start" VerticalOptions="Center">
+                    <BoxView CornerRadius="3"
+                             Color="{Binding IsTop25, Converter={StaticResource BoolToColorConverter}}" />
+                    <Label Text="{Binding Rank}"
+                           FontSize="9" FontAttributes="Bold" TextColor="White"
+                           HorizontalOptions="Center" VerticalOptions="Center" />
+                  </Grid>
+
+                  <!-- Team (only tap target — gesture on the team Span) + (CONF) -->
+                  <Label Grid.Row="0" Grid.Column="1"
+                         FontSize="12" LineBreakMode="TailTruncation">
+                    <Label.FormattedText>
+                      <FormattedString>
+                        <Span Text="{Binding TeamName}"
+                              TextColor="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}">
+                          <Span.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference ThisPage}, Path=BindingContext.NavigateToTeamCommand}"
+                                CommandParameter="{Binding TeamID}" />
+                          </Span.GestureRecognizers>
+                        </Span>
+                        <Span Text="{Binding DisplayConferenceSuffix}"
+                              FontSize="10"
+                              TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}" />
+                      </FormattedString>
+                    </Label.FormattedText>
+                  </Label>
+
+                  <!-- Actual record · Rating -->
+                  <Label Grid.Row="1" Grid.Column="1"
+                         FontSize="10" LineBreakMode="TailTruncation"
+                         TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}">
+                    <Label.FormattedText>
+                      <FormattedString>
+                        <Span Text="{Binding Record}" />
+                        <Span Text="  ·  " />
+                        <Span Text="{Binding DisplayRating}" FontAttributes="Bold" />
+                      </FormattedString>
+                    </Label.FormattedText>
+                  </Label>
+                </Grid>
+              </DataTemplate>
+              </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+            <!-- Right: 13–25 -->
+            <VerticalStackLayout Grid.Column="1" Spacing="0"
+                                 BindableLayout.ItemsSource="{Binding Top25Right}">
+              <BindableLayout.ItemTemplate>
+                <DataTemplate x:DataType="models:Top25Card">
+                <Grid Padding="4,5" ColumnDefinitions="22,*" RowDefinitions="Auto,Auto" ColumnSpacing="4">
+                  <Grid.Triggers>
+                    <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="True">
+                      <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFF8F0, Dark=#2A2A2A}" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="False">
+                      <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=White, Dark=#1A1A1A}" />
+                    </DataTrigger>
+                  </Grid.Triggers>
+
+                  <!-- Small rank badge -->
+                  <Grid Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+                        HeightRequest="20" WidthRequest="22"
+                        HorizontalOptions="Start" VerticalOptions="Center">
+                    <BoxView CornerRadius="3"
+                             Color="{Binding IsTop25, Converter={StaticResource BoolToColorConverter}}" />
+                    <Label Text="{Binding Rank}"
+                           FontSize="9" FontAttributes="Bold" TextColor="White"
+                           HorizontalOptions="Center" VerticalOptions="Center" />
+                  </Grid>
+
+                  <!-- Team (only tap target — gesture on the team Span) + (CONF) -->
+                  <Label Grid.Row="0" Grid.Column="1"
+                         FontSize="12" LineBreakMode="TailTruncation">
+                    <Label.FormattedText>
+                      <FormattedString>
+                        <Span Text="{Binding TeamName}"
+                              TextColor="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}">
+                          <Span.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference ThisPage}, Path=BindingContext.NavigateToTeamCommand}"
+                                CommandParameter="{Binding TeamID}" />
+                          </Span.GestureRecognizers>
+                        </Span>
+                        <Span Text="{Binding DisplayConferenceSuffix}"
+                              FontSize="10"
+                              TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}" />
+                      </FormattedString>
+                    </Label.FormattedText>
+                  </Label>
+
+                  <!-- Actual record · Rating -->
+                  <Label Grid.Row="1" Grid.Column="1"
+                         FontSize="10" LineBreakMode="TailTruncation"
+                         TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}">
+                    <Label.FormattedText>
+                      <FormattedString>
+                        <Span Text="{Binding Record}" />
+                        <Span Text="  ·  " />
+                        <Span Text="{Binding DisplayRating}" FontAttributes="Bold" />
+                      </FormattedString>
+                    </Label.FormattedText>
+                  </Label>
+                </Grid>
+              </DataTemplate>
+              </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+          </Grid>
+
+        </VerticalStackLayout>
+      </ScrollView>
+
+    </RefreshView>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ROW 2b: Conference averages list                    -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <RefreshView Grid.Row="2"
+                 Command="{Binding RefreshCommand}"
+                 IsRefreshing="{Binding IsRefreshing, Mode=OneWay}"
+                 IsVisible="False">
+      <RefreshView.Triggers>
+        <DataTrigger TargetType="RefreshView" Binding="{Binding IsConferencesView}" Value="True">
+          <Setter Property="IsVisible" Value="True" />
+        </DataTrigger>
+      </RefreshView.Triggers>
+
+      <CollectionView ItemsSource="{Binding ConferenceSummaries}"
+                      SelectionMode="None">
+
+        <CollectionView.ItemTemplate>
+          <DataTemplate x:DataType="models:ConferenceSummary">
+            <VerticalStackLayout Spacing="0">
+
+              <Grid Padding="4,5"
+                    ColumnDefinitions="52,*,54,50,54">
+                <Grid.Triggers>
+                  <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="True">
+                    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFF8F0, Dark=#2A2A2A}" />
+                  </DataTrigger>
+                  <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="False">
+                    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=White, Dark=#1A1A1A}" />
+                  </DataTrigger>
+                </Grid.Triggers>
+
+                <!-- Rank badge (by avg Rating) -->
+                <Grid Grid.Column="0"
+                      Padding="2,2"
+                      HeightRequest="26"
+                      WidthRequest="40"
+                      HorizontalOptions="Center"
+                      VerticalOptions="Center">
+                  <BoxView CornerRadius="3"
+                           Color="{Binding IsTop25, Converter={StaticResource BoolToColorConverter}}" />
+                  <Label Text="{Binding ConferenceRank}"
+                         FontSize="11" FontAttributes="Bold" TextColor="White"
+                         HorizontalOptions="Center" VerticalOptions="Center" />
+                </Grid>
+
+                <!-- Conference name (tap → Teams filtered to this conference) + subtitle -->
+                <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
+                  <Label Text="{Binding ConferenceName}"
+                         FontSize="13" LineBreakMode="TailTruncation"
+                         TextColor="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}">
+                    <Label.GestureRecognizers>
+                      <TapGestureRecognizer
+                          Command="{Binding Source={x:Reference ThisPage}, Path=BindingContext.NavigateToConferenceCommand}"
+                          CommandParameter="{Binding ConferenceKey}" />
+                    </Label.GestureRecognizers>
+                  </Label>
+                  <Label Text="{Binding DisplaySubtitle}"
+                         FontSize="10" TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}" LineBreakMode="TailTruncation"/>
+                </VerticalStackLayout>
+
+                <Label Grid.Column="2" Text="{Binding DisplayRating}"
+                       FontSize="11" FontAttributes="Bold" VerticalOptions="Center"/>
+                <Label Grid.Column="3" Text="{Binding DisplaySOS}"
+                       FontSize="11" VerticalOptions="Center"/>
+                <Label Grid.Column="4" Text="{Binding DisplayRosterRank}"
+                       FontSize="11" VerticalOptions="Center" HorizontalOptions="Center"/>
+
+              </Grid>
+
+              <BoxView HeightRequest="1"
+                       Color="{AppThemeBinding Light=#1A000000, Dark=#1AFFFFFF}" />
+
+            </VerticalStackLayout>
+          </DataTemplate>
+        </CollectionView.ItemTemplate>
+
+        <CollectionView.EmptyView>
+          <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Padding="20">
+            <Label Text="{Binding EmptyMessage}" FontSize="14" TextColor="{AppThemeBinding Light=#B3000000, Dark=#B3FFFFFF}"
+                   HorizontalOptions="Center" Margin="0,10,0,0"/>
+          </VerticalStackLayout>
+        </CollectionView.EmptyView>
+
+      </CollectionView>
+
+    </RefreshView>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ROW 3: Status bar                                   -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <Grid Grid.Row="3" HeightRequest="24" ColumnDefinitions="*,Auto"
           BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceAltLight}, Dark={StaticResource SurfaceAltDark}}">
       <Label Grid.Column="0" Text="{Binding StatusMessage}"
              Padding="8,0" FontSize="10" TextColor="{AppThemeBinding Light=#B3000000, Dark=#B3FFFFFF}"
