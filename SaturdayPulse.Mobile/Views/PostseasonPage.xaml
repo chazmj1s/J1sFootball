@@ -13,6 +13,12 @@
 
   <ContentPage.Resources>
 
+    <!-- Rating/SOS ×100 display (2026-10-18) — used by the Projected Field
+         seed table, which binds the raw PlayoffSeed.Ranking/CombinedSOS
+         numerics directly. Declared locally, same as the other pages'
+         page-scoped converters. -->
+    <local:RatingDisplayConverter x:Key="RatingDisplayConverter" />
+
     <!-- ════════════════════════════════════════════════════════════════ -->
     <!-- Reusable GameResult card — Schedule layout                       -->
     <!-- Used by Playoffs, Bowls, and Title Games for the scheduled game  -->
@@ -575,11 +581,11 @@
                         </Label.FormattedText>
                       </Label>
 
-                      <Label Grid.Column="2" Text="{Binding Ranking, StringFormat='{0:0.0000}'}"
+                      <Label Grid.Column="2" Text="{Binding Ranking, Converter={StaticResource RatingDisplayConverter}}"
                              FontSize="11" HorizontalOptions="Center" VerticalOptions="Center"
                              TextColor="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
 
-                      <Label Grid.Column="3" Text="{Binding CombinedSOS, StringFormat='{0:0.000}'}"
+                      <Label Grid.Column="3" Text="{Binding CombinedSOS, Converter={StaticResource RatingDisplayConverter}}"
                              FontSize="11" HorizontalOptions="Center" VerticalOptions="Center" />
 
                       <Label Grid.Column="4" HorizontalOptions="End" VerticalOptions="Center" FontSize="11">

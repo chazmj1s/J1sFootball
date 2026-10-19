@@ -52,8 +52,10 @@ public class ConferenceSummary
     public string DisplayActualRecord    => $"{AvgWins:F1}-{AvgLosses:F1}";
     public string DisplayProjectedRecord => $"({AvgProjectedWins:F1}-{AvgProjectedLosses:F1})";
 
-    public string DisplayRating     => AvgRating?.ToString("F4") ?? "N/A";
-    public string DisplaySOS        => AvgSOS?.ToString("F4") ?? "N/A";
+    /// <summary>Avg Rating / Avg SOS ×100, two decimals — same scale as the
+    /// team rows (display only, see RatingDisplay).</summary>
+    public string DisplayRating     => RatingDisplay.Format(AvgRating);
+    public string DisplaySOS        => RatingDisplay.Format(AvgSOS);
     public string DisplayRosterRank => AvgRosterRank.HasValue ? $"#{AvgRosterRank.Value:F1}" : "—";
 
     public string DisplaySubtitle

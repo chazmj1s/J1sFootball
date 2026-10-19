@@ -88,6 +88,33 @@ namespace SaturdayPulse.Services
                 return null;
             }
         }
+
+        /// <summary>
+        /// AP / Coaches polls for a year+week. Returns null on any failure — the
+        /// Rankings page then shows J1s only for AP/Coaches.
+        /// Maps to: GET /api/productiongamedata/polls/v2?year=X&amp;week=Y
+        /// </summary>
+        public async Task<PollWeekResponse?> GetWeeklyPollsAsync(int year, int week)
+        {
+            try
+            {
+                var url = $"polls/v2?year={year}&week={week}";
+                System.Diagnostics.Debug.WriteLine($"[API] Fetching polls: {url}");
+
+                var data = await _httpClient.GetFromJsonAsync<PollWeekResponse>(url);
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[API] Polls {year} wk {week}: AP {data?.ApPoll?.Count ?? 0}, Coaches {data?.CoachesPoll?.Count ?? 0}");
+
+                return data;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[API] Error fetching polls: {ex.Message}");
+                return null;
+            }
+        }
+
         /// <summary>
         /// Fetches Seed / Trend / Pedigree rating history for a single team.
         /// Called lazily when the user first taps "Trend / Pedigree ▼" on a row.
