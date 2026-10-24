@@ -115,8 +115,9 @@ public class TeamRanking : INotifyPropertyChanged
             ? $"({ProjectedRecord}) {Record}"
             : Record;
 
+    /// <summary>Rating ×100, two decimals (display only — see RatingDisplay).</summary>
     public string DisplayRank =>
-        Ranking?.ToString() ?? "N/A";
+        RatingDisplay.Format(Ranking);
 
     public string DisplayTier =>
         Tier ?? "N/A";
@@ -135,8 +136,9 @@ public class TeamRanking : INotifyPropertyChanged
     public string DisplayConferenceTier =>
         $"{ConferenceAbbr} · {DisplayTierWithRank}";
 
+    /// <summary>SOS ×100, two decimals (display only — see RatingDisplay).</summary>
     public string DisplaySOS =>
-        CombinedSOS?.ToString("F4") ?? "N/A";
+        RatingDisplay.Format(CombinedSOS);
 
     public string OffensiveRankDisplay =>
         OffensiveRank > 0 ? $"#{OffensiveRank}" : "—";

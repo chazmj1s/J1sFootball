@@ -56,6 +56,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // ── Services ──────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<ScoreDeltaCalculator>();
 builder.Services.AddScoped<MatchupHistoryCalculator>();
+builder.Services.AddScoped<PollRankingsLoader>();
 builder.Services.AddScoped<TierDiscountCalculator>();
 builder.Services.AddScoped<AnchorBlendCalculator>();
 builder.Services.AddScoped<IGameDataService, GameDataService>();

@@ -2,6 +2,7 @@ using SaturdayPulse.Models;
 using SaturdayPulse.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows.Input;
 
 namespace SaturdayPulse.ViewModels
@@ -30,6 +31,15 @@ namespace SaturdayPulse.ViewModels
         private ObservableCollection<Top25Card> _top25Right = new();
         private RankingSort   _confSort              = RankingSort.Rank;
         private bool          _isConfSortAscending   = true;
+
+        // ── Top 25 source: J1s | AP | Coaches (2026-10-18) ─────────────────
+        // J1s = existing OverallRank top 25. AP/Coaches = CFBD polls for the
+        // same (year, week), fetched alongside rankings in LoadDataAsync.
+        private const string SourceJ1s     = "J1s";
+        private const string SourceAp      = "AP";
+        private const string SourceCoaches = "Coaches";
+        private string            _top25Source = SourceJ1s;
+        private PollWeekResponse? _polls;
 
 
         public PowerRankingsViewModel(
@@ -195,6 +205,23 @@ namespace SaturdayPulse.ViewModels
                 SelectedView = view;
             });
 
+            // Top 25 radio row — the radio is the action: picks the source AND
+            // switches to the Top 25 view. Polls are already loaded with the
+            // rankings, so switching source is a local rebuild, no server call.
+            SelectTop25SourceCommand = new Microsoft.Maui.Controls.Command<string>(source =>
+            {
+                if (source is not (SourceJ1s or SourceAp or SourceCoaches)) return;
+
+                var changed = _top25Source != source;
+                _top25Source = source;
+                SelectedView = "Top25";
+
+                if (changed)
+                    BuildTop25();
+
+                RaiseTop25SourceProperties();
+            });
+
             // Conference row tap — flip back to Teams filtered to that conference.
             // Both SelectedConference and ApplyFiltersAndSort are set/called here;
             // if the setter also raises FilterChanged(Conference), the second
@@ -250,12 +277,52 @@ namespace SaturdayPulse.ViewModels
         public bool HasTop25   => _top25Left.Count > 0;
         public bool HasNoTop25 => !HasTop25;
 
+        // ── Top 25 source radio state ─────────────────────────────────────
+        // Filled radio only while the Top 25 view is showing, so the row reads
+        // as "which list am I looking at," not a hidden setting.
+
+        public bool IsJ1sSourceSelected     => IsTop25View && _top25Source == SourceJ1s;
+        public bool IsApSourceSelected      => IsTop25View && _top25Source == SourceAp;
+        public bool IsCoachesSourceSelected => IsTop25View && _top25Source == SourceCoaches;
+
+        /// <summary>
+        /// Empty-state text for the Top 25 view. J1s mirrors EmptyMessage; a poll
+        /// source with no poll for the selected week names the poll and week.
+        /// </summary>
+        public string Top25EmptyMessage
+        {
+            get
+            {
+                if (_top25Source == SourceJ1s || IsBusy)
+                    return EmptyMessage;
+
+                var pollName = _top25Source == SourceAp ? "AP Top 25" : "Coaches Poll";
+                var week = _navState.SelectedWeek;
+                return week > 0
+                    ? $"No {pollName} for Week {week}"
+                    : $"No {pollName} for this view";
+            }
+        }
+
+        private void RaiseTop25SourceProperties()
+        {
+            OnPropertyChanged(nameof(IsJ1sSourceSelected));
+            OnPropertyChanged(nameof(IsApSourceSelected));
+            OnPropertyChanged(nameof(IsCoachesSourceSelected));
+            OnPropertyChanged(nameof(Top25EmptyMessage));
+        }
+
         // ── Bindable properties ───────────────────────────────────────────
 
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); }
+            set
+            {
+                _isBusy = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Top25EmptyMessage));
+            }
         }
 
         /// <summary>
@@ -281,6 +348,7 @@ namespace SaturdayPulse.ViewModels
                 OnPropertyChanged(nameof(IsTeamsView));
                 OnPropertyChanged(nameof(IsTop25View));
                 OnPropertyChanged(nameof(IsConferencesView));
+                RaiseTop25SourceProperties();
             }
         }
 
@@ -302,7 +370,12 @@ namespace SaturdayPulse.ViewModels
         public string EmptyMessage
         {
             get => _emptyMessage;
-            set { _emptyMessage = value; OnPropertyChanged(); }
+            set
+            {
+                _emptyMessage = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Top25EmptyMessage));
+            }
         }
         public bool   HasLoaded     { get; set; }
 
@@ -368,6 +441,7 @@ namespace SaturdayPulse.ViewModels
         public ICommand ToggleFollowCommand { get; }
         public ICommand NavigateToTeamCommand { get; }
         public ICommand SelectViewCommand { get; }
+        public ICommand SelectTop25SourceCommand { get; }
         public ICommand NavigateToConferenceCommand { get; }
 
         // ── Load ──────────────────────────────────────────────────────────
@@ -400,13 +474,29 @@ namespace SaturdayPulse.ViewModels
 
             try
             {
+                var year = _navState.SelectedYear;
+                var week = _navState.SelectedWeek;
+
+                // AP/Coaches polls for the same (year, week), fetched in parallel
+                // with rankings. GetWeeklyPollsAsync never throws (returns null on
+                // failure), so this task can't fault unobserved if rankings throws.
+                // Week 0 is the season-final view — no poll lookup.
+                var pollsTask = week > 0
+                    ? Task.Run(() => _apiService.GetWeeklyPollsAsync(year, week))
+                    : Task.FromResult<PollWeekResponse?>(null);
+
                 var teams = await Task.Run(async () =>
                     await _rankingsCache.GetRankingsAsync(
-                        _navState.SelectedYear,
-                        _navState.SelectedWeek,
+                        year,
+                        week,
                         forceReload), token);
 
+                var polls = await pollsTask;
+
                 if (token.IsCancellationRequested) return;
+
+                // Assigned before ApplyFiltersAndSort so BuildTop25 sees this week's polls.
+                _polls = polls;
 
                 if (teams != null && teams.Any())
                 {
@@ -608,35 +698,84 @@ namespace SaturdayPulse.ViewModels
         // ── Top 25 view ───────────────────────────────────────────────────
 
         /// <summary>
-        /// National top 25 by OverallRank (ordinal of Rating) from _allTeams.
-        /// Ignores the tier filter, conference picker and favorites-first.
-        /// Split 1–12 left / 13–25 right; row alternation is per column.
+        /// Builds the Top 25 view for the selected source. Ignores the tier
+        /// filter, conference picker and favorites-first in every source.
+        /// Row alternation is per column.
+        ///
+        /// J1s: national top 25 by OverallRank from _allTeams, split 1–12 left /
+        ///      13–25 right.
+        /// AP / Coaches: CFBD poll rows for the loaded week, in the server's
+        ///      order. Split by position (first 12 left, rest right) rather than
+        ///      by rank — ties make rank numbers non-sequential, and a tie at 25
+        ///      produces a 26th row. Same card layout; Record shows first-place
+        ///      votes and Rating shows poll points. Team name/abbreviation come
+        ///      from _allTeams by TeamID when available so naming matches the
+        ///      rest of the app; the poll's own school/conference is the fallback.
         /// </summary>
         private void BuildTop25()
         {
-            var top = _allTeams
-                .Where(t => t.OverallRank > 0 && t.OverallRank <= 25)
-                .OrderBy(t => t.OverallRank)
-                .ToList();
+            List<Top25Card> left;
+            List<Top25Card> right;
 
-            static Top25Card ToCard(TeamRanking t, int index) => new()
+            if (_top25Source == SourceJ1s)
             {
-                TeamID        = t.TeamID,
-                Rank          = t.OverallRank,
-                TeamName      = t.TeamName,
-                ConferenceAbbr = t.ConferenceAbbr,
-                Record        = t.Record,
-                DisplayRating = t.DisplayRank,
-                IsOddRow      = index % 2 == 1
-            };
+                var top = _allTeams
+                    .Where(t => t.OverallRank > 0 && t.OverallRank <= 25)
+                    .OrderBy(t => t.OverallRank)
+                    .ToList();
 
-            var left  = top.Where(t => t.OverallRank <= 12).Select(ToCard).ToList();
-            var right = top.Where(t => t.OverallRank >= 13).Select(ToCard).ToList();
+                static Top25Card ToCard(TeamRanking t, int index) => new()
+                {
+                    TeamID         = t.TeamID,
+                    Rank           = t.OverallRank,
+                    RankDisplay    = $"{t.OverallRank}",
+                    TeamName       = t.TeamName,
+                    ConferenceAbbr = t.ConferenceAbbr,
+                    Record         = t.Record,
+                    DisplayRating  = t.DisplayRank,
+                    IsOddRow       = index % 2 == 1
+                };
+
+                left  = top.Where(t => t.OverallRank <= 12).Select(ToCard).ToList();
+                right = top.Where(t => t.OverallRank >= 13).Select(ToCard).ToList();
+            }
+            else
+            {
+                var rows = (_top25Source == SourceAp ? _polls?.ApPoll : _polls?.CoachesPoll)
+                           ?? new List<PollRankingDto>();
+
+                var teamsById = _allTeams
+                    .GroupBy(t => t.TeamID)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                Top25Card ToPollCard(PollRankingDto r, int index)
+                {
+                    teamsById.TryGetValue(r.TeamId, out var t);
+
+                    return new Top25Card
+                    {
+                        TeamID         = r.TeamId,
+                        Rank           = r.Rank,
+                        RankDisplay    = string.IsNullOrWhiteSpace(r.DisplayRank)
+                                             ? r.Rank.ToString(CultureInfo.InvariantCulture)
+                                             : r.DisplayRank,
+                        TeamName       = t?.TeamName ?? r.School ?? string.Empty,
+                        ConferenceAbbr = t?.ConferenceAbbr ?? r.Conference,
+                        Record         = $"{r.FirstPlaceVotes ?? 0} 1st",
+                        DisplayRating  = $"{r.Points ?? 0:N0} pts",
+                        IsOddRow       = index % 2 == 1
+                    };
+                }
+
+                left  = rows.Take(12).Select(ToPollCard).ToList();
+                right = rows.Skip(12).Select(ToPollCard).ToList();
+            }
 
             Top25Left  = new ObservableCollection<Top25Card>(left);
             Top25Right = new ObservableCollection<Top25Card>(right);
             OnPropertyChanged(nameof(HasTop25));
             OnPropertyChanged(nameof(HasNoTop25));
+            OnPropertyChanged(nameof(Top25EmptyMessage));
         }
 
         // ── Conferences view ──────────────────────────────────────────────

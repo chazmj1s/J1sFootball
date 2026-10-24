@@ -28,8 +28,10 @@ namespace SaturdayPulse.Models
 
         // ── Display helpers ───────────────────────────────────────────────
         public string DisplayRank       => OverallRank > 0       ? $"#{OverallRank}"               : "–";
-        public string DisplayRating     => PowerRating.HasValue   ? $"{PowerRating.Value:F3}"       : "–";
-        public string DisplaySOS        => CombinedSOS.HasValue   ? $"{CombinedSOS.Value:F3}"       : "–";
+        // Rating / SOS ×100, two decimals (display only — see RatingDisplay).
+        // Keeps this card's "–" placeholder rather than RatingDisplay's "N/A".
+        public string DisplayRating     => PowerRating.HasValue   ? RatingDisplay.Format(PowerRating) : "–";
+        public string DisplaySOS        => CombinedSOS.HasValue   ? RatingDisplay.Format(CombinedSOS) : "–";
         public string DisplayOffRank    => OffensiveRank.HasValue ? $"#{OffensiveRank}"             : "–";
         public string DisplayDefRank    => DefensiveRank.HasValue ? $"#{DefensiveRank}"             : "–";
         public string DisplayPtsScored  => AvgPointsScored.HasValue  ? $"{AvgPointsScored.Value:F1}"  : "–";

@@ -16,6 +16,8 @@ public class Top25Card
     public string DisplayRating { get; init; } = "N/A";
     public bool   IsOddRow      { get; init; }
 
+    public string RankDisplay { get; set; } = string.Empty;
+
     /// <summary>" (SEC)" suffix shown after the team name; empty when unknown.</summary>
     public string DisplayConferenceSuffix =>
         string.IsNullOrWhiteSpace(ConferenceAbbr) ? string.Empty : $" ({ConferenceAbbr})";

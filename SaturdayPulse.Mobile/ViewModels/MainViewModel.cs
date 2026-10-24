@@ -423,7 +423,7 @@ namespace SaturdayPulse.ViewModels
         public string ConferencePillText =>
             SelectedIndex == MyTeamsTabIndex
                 ? _myTeamsViewModel.SelectedTeamRanking?.DisplayConferenceTier
-                  ?? "No team selected"
+                  ?? "My Team default has not been set. Please go to Settings/App Settings and make your selection."
                 : _navState.SelectedConference;
 
         public bool IsConferencePillInteractive => SelectedIndex != MyTeamsTabIndex;

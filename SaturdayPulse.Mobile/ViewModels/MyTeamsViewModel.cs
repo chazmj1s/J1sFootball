@@ -653,7 +653,14 @@ namespace SaturdayPulse.ViewModels
 
             Chips.Clear();
 
-            var primaryId   = _followService.GetPrimaryTeamId();
+            // "My Team" from App Settings — persisted on
+            // SharedNavigationStateService.DefaultTeamId (2026-10-24), the
+            // same way DefaultConference is. Previously read from
+            // FollowService.GetPrimaryTeamId(), which didn't survive a
+            // restart, so the leftmost primary chip disappeared on relaunch.
+            // Always the first chip, whether or not the team is also
+            // followed; followed teams follow it alphabetically.
+            var primaryId   = _navState.DefaultTeamId;
             var followedIds = _followService.GetFollowedIds();
 
             if (primaryId.HasValue)
@@ -699,6 +706,16 @@ namespace SaturdayPulse.ViewModels
 
         private async void OnNavStateChanged(object? sender, PropertyChangedEventArgs e)
         {
+            // My Team changed in App Settings — rebuild the strip with the
+            // new team leftmost and select it. Not gated on IsActive: the
+            // change is made from Settings, so My Teams is always off-screen
+            // here, and the strip must already be right when it's shown.
+            if (e.PropertyName == nameof(SharedNavigationStateService.DefaultTeamId))
+            {
+                await RefreshChipsAndSelectionAsync(_navState.DefaultTeamId);
+                return;
+            }
+
             if (e.PropertyName != "FilterChanged") return;
 
             // Off-screen: defer, mark stale so the next appearance reloads —
@@ -763,31 +780,64 @@ namespace SaturdayPulse.ViewModels
             }
         }
 
-        private async void OnPrimaryTeamChanged(int? teamId)
+        /// <summary>
+        /// FollowService's primary-team event no longer drives which team is
+        /// "My Team" — SharedNavigationStateService.DefaultTeamId does (see
+        /// BuildChipsAsync). This still rebuilds the strip, because it's also
+        /// how a late FollowService.InitializeAsync() gets the followed-team
+        /// chips onto the screen, but it deliberately ignores the teamId it
+        /// carries: at startup FollowService can report a stale or null
+        /// server-side primary, which must not override the saved My Team.
+        /// </summary>
+        private async void OnPrimaryTeamChanged(int? _)
+        {
+            await RefreshChipsAndSelectionAsync(preferredTeamId: null);
+        }
+
+        /// <summary>
+        /// Rebuilds the chip strip, then settles the selection:
+        ///   - preferredTeamId (a newly chosen My Team) wins when it's on the strip;
+        ///   - otherwise the current selection is kept if its chip still exists
+        ///     (or a preview is showing — previews never have a chip);
+        ///   - otherwise the first chip, which is My Team when one is set.
+        /// Then loads or refilters. If this fires before the very first load
+        /// ever completed — e.g. FollowService.InitializeAsync() resolving
+        /// after InitializeAsync() already hit its "no teams followed yet"
+        /// early-return — the shared caches were never fetched, so do the real
+        /// load rather than refiltering an empty cache.
+        /// </summary>
+        private async Task RefreshChipsAndSelectionAsync(int? preferredTeamId)
         {
             await BuildChipsAsync();
 
-            // Per design: primary-team change is treated as a filter change —
-            // re-point at the new team immediately.
-            if (teamId.HasValue)
+            if (Chips.Count == 0)
             {
-                SelectedTeamId = teamId.Value;
-                UpdateChipSelection();
+                if (IsPreviewing) return;
 
-                // If this fires before the very first load ever completed —
-                // e.g. FollowService.InitializeAsync() resolving after
-                // InitializeAsync() above already hit its "no teams
-                // followed yet" early-return because the follow cache
-                // wasn't warm yet — the shared rankings/games caches were
-                // never fetched. Refiltering an empty cache leaves chips
-                // and a primary team visible with no game data, until
-                // something else (a tab switch) triggers a real load. Do
-                // the real load here instead of just refiltering.
-                if (HasLoaded)
-                    ApplyTeamFilter();
-                else
-                    await LoadForYearOrWeekChangeAsync();
+                SelectedTeamId = 0;
+                SelectedTeamRanking = null;
+                SelectedTeamGames.ReplaceRange(new List<MyTeamsGameRow>());
+                SelectedTeamPostseasonGames.ReplaceRange(new List<MyTeamsGameRow>());
+                OnPropertyChanged(nameof(HasPostseasonGames));
+                StatusMessage = "No teams followed yet.";
+                return;
             }
+
+            if (preferredTeamId.HasValue && Chips.Any(c => c.TeamId == preferredTeamId.Value))
+            {
+                SelectedTeamId = preferredTeamId.Value;
+            }
+            else if (!IsPreviewing && Chips.All(c => c.TeamId != SelectedTeamId))
+            {
+                SelectedTeamId = Chips[0].TeamId;
+            }
+
+            UpdateChipSelection();
+
+            if (HasLoaded)
+                ApplyTeamFilter();
+            else
+                await LoadForYearOrWeekChangeAsync();
         }
 
         // ── Team preview (2026-09-13) ────────────────────────────────────

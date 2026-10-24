@@ -13,20 +13,26 @@
   <Grid RowDefinitions="Auto,Auto,*,24">
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ROW 0: Teams | Top 25 | Conferences — mirrors      -->
-    <!--        Postseason's Title Games | Playoffs | Bowls  -->
+    <!-- ROW 0: Teams | Conferences | Top 25: ○ J1s ○ AP ○ Coaches -->
+    <!-- The radios are the action (source + switch to Top 25); -->
+    <!-- "Top 25:" is a caption only. Radios are plain tappable -->
+    <!-- glyph labels, not native RadioButton (renders         -->
+    <!-- inconsistently across iOS/Android).                    -->
+    <!-- Font sizes trimmed 14→13 (tabs) / 12 (radios) so the   -->
+    <!-- full row fits a 375pt-wide phone without wrapping.     -->
     <!-- ═══════════════════════════════════════════════════ -->
     <Grid Grid.Row="0"
-          ColumnDefinitions="*,*,*"
+          ColumnDefinitions="Auto,Auto,*"
+          ColumnSpacing="10"
           BackgroundColor="{AppThemeBinding Light=#F8F8F8, Dark=#1E1E1E}"
           Padding="8,4">
 
-      <Border Grid.Column="0" HorizontalOptions="Center" VerticalOptions="Center" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+      <Border Grid.Column="0" HorizontalOptions="Start" VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
         <Border.GestureRecognizers>
           <TapGestureRecognizer Command="{Binding SelectViewCommand}" CommandParameter="Teams" />
         </Border.GestureRecognizers>
         <Label Text="Teams"
-               FontSize="14" FontAttributes="Bold">
+               FontSize="13" FontAttributes="Bold" LineBreakMode="NoWrap">
           <Label.Triggers>
             <DataTrigger TargetType="Label" Binding="{Binding IsTeamsView}" Value="True">
               <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
@@ -40,31 +46,12 @@
         </Label>
       </Border>
 
-      <Border Grid.Column="1" HorizontalOptions="Center" VerticalOptions="Center" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
-        <Border.GestureRecognizers>
-          <TapGestureRecognizer Command="{Binding SelectViewCommand}" CommandParameter="Top25" />
-        </Border.GestureRecognizers>
-        <Label Text="Top 25"
-               FontSize="14" FontAttributes="Bold">
-          <Label.Triggers>
-            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="True">
-              <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
-              <Setter Property="TextDecorations" Value="Underline" />
-            </DataTrigger>
-            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="False">
-              <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
-              <Setter Property="TextDecorations" Value="None" />
-            </DataTrigger>
-          </Label.Triggers>
-        </Label>
-      </Border>
-
-      <Border Grid.Column="2" HorizontalOptions="Center" VerticalOptions="Center" Padding="4,6" StrokeThickness="0" BackgroundColor="Transparent">
+      <Border Grid.Column="1" HorizontalOptions="Start" VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
         <Border.GestureRecognizers>
           <TapGestureRecognizer Command="{Binding SelectViewCommand}" CommandParameter="Conferences" />
         </Border.GestureRecognizers>
         <Label Text="Conferences"
-               FontSize="14" FontAttributes="Bold">
+               FontSize="13" FontAttributes="Bold" LineBreakMode="NoWrap">
           <Label.Triggers>
             <DataTrigger TargetType="Label" Binding="{Binding IsConferencesView}" Value="True">
               <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
@@ -77,6 +64,84 @@
           </Label.Triggers>
         </Label>
       </Border>
+
+      <!-- Top 25 caption + source radios, right-aligned -->
+      <HorizontalStackLayout Grid.Column="2"
+                             HorizontalOptions="End"
+                             VerticalOptions="Center"
+                             Spacing="6">
+
+        <Label Text="Top 25:"
+               FontSize="13" FontAttributes="Bold" LineBreakMode="NoWrap"
+               VerticalOptions="Center">
+          <Label.Triggers>
+            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="True">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+            </DataTrigger>
+            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="False">
+              <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+            </DataTrigger>
+          </Label.Triggers>
+        </Label>
+
+        <!-- ○ J1s -->
+        <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
+          <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding SelectTop25SourceCommand}" CommandParameter="J1s" />
+          </Border.GestureRecognizers>
+          <Label FontSize="12" FontAttributes="Bold" LineBreakMode="NoWrap">
+            <Label.Triggers>
+              <DataTrigger TargetType="Label" Binding="{Binding IsJ1sSourceSelected}" Value="True">
+                <Setter Property="Text" Value="● J1s" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              </DataTrigger>
+              <DataTrigger TargetType="Label" Binding="{Binding IsJ1sSourceSelected}" Value="False">
+                <Setter Property="Text" Value="○ J1s" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              </DataTrigger>
+            </Label.Triggers>
+          </Label>
+        </Border>
+
+        <!-- ○ AP -->
+        <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
+          <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding SelectTop25SourceCommand}" CommandParameter="AP" />
+          </Border.GestureRecognizers>
+          <Label FontSize="12" FontAttributes="Bold" LineBreakMode="NoWrap">
+            <Label.Triggers>
+              <DataTrigger TargetType="Label" Binding="{Binding IsApSourceSelected}" Value="True">
+                <Setter Property="Text" Value="● AP" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              </DataTrigger>
+              <DataTrigger TargetType="Label" Binding="{Binding IsApSourceSelected}" Value="False">
+                <Setter Property="Text" Value="○ AP" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              </DataTrigger>
+            </Label.Triggers>
+          </Label>
+        </Border>
+
+        <!-- ○ Coaches -->
+        <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
+          <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding SelectTop25SourceCommand}" CommandParameter="Coaches" />
+          </Border.GestureRecognizers>
+          <Label FontSize="12" FontAttributes="Bold" LineBreakMode="NoWrap">
+            <Label.Triggers>
+              <DataTrigger TargetType="Label" Binding="{Binding IsCoachesSourceSelected}" Value="True">
+                <Setter Property="Text" Value="● Coaches" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              </DataTrigger>
+              <DataTrigger TargetType="Label" Binding="{Binding IsCoachesSourceSelected}" Value="False">
+                <Setter Property="Text" Value="○ Coaches" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              </DataTrigger>
+            </Label.Triggers>
+          </Label>
+        </Border>
+
+      </HorizontalStackLayout>
 
     </Grid>
 
@@ -880,8 +945,12 @@
     </RefreshView>
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ROW 2c: Top 25 — two columns, 1–12 left, 13–25 right -->
-    <!-- National by OverallRank; ignores filters/favorites  -->
+    <!-- ROW 2c: Top 25 — two columns                         -->
+    <!-- J1s: by OverallRank, 1–12 left / 13–25 right.        -->
+    <!-- AP / Coaches: poll order, first 12 left / rest right; -->
+    <!-- badge shows RankDisplay ("T-14" on ties); Record =   -->
+    <!-- first-place votes, DisplayRating = poll points.      -->
+    <!-- Ignores filters/favorites in every source.           -->
     <!-- ═══════════════════════════════════════════════════ -->
     <RefreshView Grid.Row="2"
                  Command="{Binding RefreshCommand}"
@@ -896,7 +965,7 @@
       <ScrollView>
         <VerticalStackLayout Spacing="0">
 
-          <Label Text="{Binding EmptyMessage}"
+          <Label Text="{Binding Top25EmptyMessage}"
                  IsVisible="{Binding HasNoTop25}"
                  FontSize="14" HorizontalOptions="Center" Margin="0,30,0,0"
                  TextColor="{AppThemeBinding Light=#B3000000, Dark=#B3FFFFFF}" />
@@ -904,12 +973,12 @@
           <Grid ColumnDefinitions="*,*" ColumnSpacing="4" Padding="4,4"
                 IsVisible="{Binding HasTop25}">
 
-            <!-- Left: 1–12 -->
+            <!-- Left: J1s 1–12 / poll first 12 rows -->
             <VerticalStackLayout Grid.Column="0" Spacing="0"
                                  BindableLayout.ItemsSource="{Binding Top25Left}">
               <BindableLayout.ItemTemplate>
                 <DataTemplate x:DataType="models:Top25Card">
-                <Grid Padding="4,5" ColumnDefinitions="22,*" RowDefinitions="Auto,Auto" ColumnSpacing="4">
+                <Grid Padding="4,5" ColumnDefinitions="30,*" RowDefinitions="Auto,Auto" ColumnSpacing="4">
                   <Grid.Triggers>
                     <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="True">
                       <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFF8F0, Dark=#2A2A2A}" />
@@ -921,11 +990,11 @@
 
                   <!-- Small rank badge -->
                   <Grid Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
-                        HeightRequest="20" WidthRequest="22"
+                        HeightRequest="20" WidthRequest="30"
                         HorizontalOptions="Start" VerticalOptions="Center">
                     <BoxView CornerRadius="3"
                              Color="{Binding IsTop25, Converter={StaticResource BoolToColorConverter}}" />
-                    <Label Text="{Binding Rank}"
+                    <Label Text="{Binding RankDisplay}" LineBreakMode="NoWrap"
                            FontSize="9" FontAttributes="Bold" TextColor="White"
                            HorizontalOptions="Center" VerticalOptions="Center" />
                   </Grid>
@@ -950,7 +1019,7 @@
                     </Label.FormattedText>
                   </Label>
 
-                  <!-- Actual record · Rating -->
+                  <!-- J1s: actual record · Rating   |   Poll: first-place votes · points -->
                   <Label Grid.Row="1" Grid.Column="1"
                          FontSize="10" LineBreakMode="TailTruncation"
                          TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}">
@@ -967,12 +1036,12 @@
               </BindableLayout.ItemTemplate>
             </VerticalStackLayout>
 
-            <!-- Right: 13–25 -->
+            <!-- Right: J1s 13–25 / poll remaining rows -->
             <VerticalStackLayout Grid.Column="1" Spacing="0"
                                  BindableLayout.ItemsSource="{Binding Top25Right}">
               <BindableLayout.ItemTemplate>
                 <DataTemplate x:DataType="models:Top25Card">
-                <Grid Padding="4,5" ColumnDefinitions="22,*" RowDefinitions="Auto,Auto" ColumnSpacing="4">
+                <Grid Padding="4,5" ColumnDefinitions="30,*" RowDefinitions="Auto,Auto" ColumnSpacing="4">
                   <Grid.Triggers>
                     <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="True">
                       <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFF8F0, Dark=#2A2A2A}" />
@@ -984,11 +1053,11 @@
 
                   <!-- Small rank badge -->
                   <Grid Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
-                        HeightRequest="20" WidthRequest="22"
+                        HeightRequest="20" WidthRequest="30"
                         HorizontalOptions="Start" VerticalOptions="Center">
                     <BoxView CornerRadius="3"
                              Color="{Binding IsTop25, Converter={StaticResource BoolToColorConverter}}" />
-                    <Label Text="{Binding Rank}"
+                    <Label Text="{Binding RankDisplay}" LineBreakMode="NoWrap"
                            FontSize="9" FontAttributes="Bold" TextColor="White"
                            HorizontalOptions="Center" VerticalOptions="Center" />
                   </Grid>
@@ -1013,7 +1082,7 @@
                     </Label.FormattedText>
                   </Label>
 
-                  <!-- Actual record · Rating -->
+                  <!-- J1s: actual record · Rating   |   Poll: first-place votes · points -->
                   <Label Grid.Row="1" Grid.Column="1"
                          FontSize="10" LineBreakMode="TailTruncation"
                          TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}">

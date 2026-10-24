@@ -294,6 +294,29 @@ namespace SaturdayPulse.Controllers
         #region Rankings
 
         /// <summary>
+        /// AP Top 25 / Coaches Poll for one week (CFBD /rankings, server-cached).
+        /// Empty lists when no poll exists for the week.
+        /// Example: GET /api/productiongamedata/polls/v2?year=2026&week=8
+        /// </summary>
+        [HttpGet("polls/v2")]
+        public async Task<IActionResult> GetWeeklyPollsV2(
+            [FromQuery] int? year,
+            [FromQuery] int? week,
+            CancellationToken token = default)
+        {
+            try
+            {
+                var result = await gameDataService.GetWeeklyPollsAsync(year, week, token);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error retrieving polls for {Year} week {Week}", year, week);
+                return StatusCode(500, "An error occurred while retrieving polls.");
+            }
+        }
+
+        /// <summary>
         /// V2: Power rankings from Teams + Conferences (CFBD-sourced).
         /// Example: GET /api/productiongamedata/powerrankings/v2?year=2025&throughWeek=10
         /// </summary>
