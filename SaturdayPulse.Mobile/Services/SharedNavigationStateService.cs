@@ -2,6 +2,7 @@ using SaturdayPulse.Models;
 using SaturdayPulse.ViewModels;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace SaturdayPulse.Services
@@ -28,6 +29,7 @@ namespace SaturdayPulse.Services
         private bool   _showFavoritesFirst = Preferences.Get("ShowFavoritesFirst", false);
         private string _defaultWeek        = Preferences.Get("DefaultWeek", "Current");
         private string _defaultConference  = Preferences.Get("DefaultConference", "All");
+        private int?   _defaultTeamId      = ReadDefaultTeamId();
         private readonly ObservableCollection<ConferenceInfo> _availableConferences = new();
 
         // ── Filter change reason ──────────────────────────────────────────
@@ -198,6 +200,38 @@ namespace SaturdayPulse.Services
             }
         }
 
+        // ── Default Team preference ("My Team" in App Settings) ───────────
+        // Mirrors DefaultConference (2026-10-24): persisted to device
+        // Preferences here, so it survives restarts and login/logout
+        // independent of FollowService's primary-team state. Null = "None".
+        // Stored as an int with 0 meaning "None" (CFBD team ids are > 0), so
+        // no nullable Preferences overload is needed.
+        private const string DefaultTeamIdKey = "DefaultTeamId";
+
+        private static int? ReadDefaultTeamId()
+        {
+            var stored = Preferences.Get(DefaultTeamIdKey, 0);
+            return stored > 0 ? stored : null;
+        }
+
+        public int? DefaultTeamId
+        {
+            get => _defaultTeamId;
+            set
+            {
+                var normalized = value is > 0 ? value : null;
+                if (_defaultTeamId == normalized) return;
+                _defaultTeamId = normalized;
+
+                if (normalized.HasValue)
+                    Preferences.Set(DefaultTeamIdKey, normalized.Value);
+                else
+                    Preferences.Remove(DefaultTeamIdKey);
+
+                OnPropertyChanged();
+            }
+        }
+
         // ── Week items ────────────────────────────────────────────────────
 
         public ObservableCollection<WeekItem> Weeks { get; } = new();
@@ -229,8 +263,18 @@ namespace SaturdayPulse.Services
         /// the DefaultWeek preference, WITHOUT firing FilterChanged (MainViewModel
         /// fires it once after all state settles). Main thread only.
         ///
-        /// Dates are projected once (getDate runs a string concat + parse per game),
-        /// then reused across both the season-start and current-week passes.
+        /// Rule (2026-10-18): week N becomes the current week on the Tuesday on or
+        /// before that week's EARLIEST game. Saturday-to-Monday of the week just
+        /// played still shows that week's results; Tuesday rolls forward.
+        ///
+        /// The previous version tested every game individually against the
+        /// Thursday on or before it. A midweek game (Tue/Wed MACtion) anchors to
+        /// the Thursday of the PRIOR week, so next week went current as early as
+        /// the Thursday before the current Saturday's games — the app opened on
+        /// next week all weekend. Anchoring on each week's earliest game and
+        /// rolling over on Tuesday removes that.
+        ///
+        /// Before the first rollover (preseason) → week 1, same as before.
         /// </summary>
         public void ApplyStartupDefaults<T>(
             IEnumerable<T> schedule,
@@ -243,42 +287,43 @@ namespace SaturdayPulse.Services
                 return;
             }
 
-            // Single parse pass: (week, date) per game.
-            var dated = schedule
-                .Select(g => (Week: getWeek(g), Date: getDate(g)))
-                .ToList();
-
-            var seasonStart = dated
-                .Where(x => !string.IsNullOrWhiteSpace(x.Date))
-                .Select(x => DateTime.Parse(x.Date))
-                .DefaultIfEmpty(DateTime.MaxValue)
-                .Min();
-
-            var today = DateTime.Today;
-            if (today < seasonStart)
+            // Single parse pass: earliest game date per week. GameDate is a
+            // complete "yyyy-MM-dd" string — parsed invariant, not concatenated.
+            var firstGameByWeek = new Dictionary<int, DateTime>();
+            foreach (var game in schedule)
             {
-                SetWeekSilent(1);
-                return;
+                var week = getWeek(game);
+                var dateText = getDate(game);
+
+                if (string.IsNullOrWhiteSpace(dateText)) continue;
+                if (!DateTime.TryParse(dateText, CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out var gameDate)) continue;
+
+                gameDate = gameDate.Date;
+                if (!firstGameByWeek.TryGetValue(week, out var earliest) || gameDate < earliest)
+                    firstGameByWeek[week] = gameDate;
             }
 
-            // Highest week that has at least one game on or before the Tuesday the first game of the week.
-            var currentWeek = dated
-                .Where(x =>
-                {
-                    if (string.IsNullOrWhiteSpace(x.Date)) return false;
+            var today = DateTime.Today;
 
-                    var weekStart = DateTime.Parse(x.Date);
-
-                    var daysSinceThursday = ((int)weekStart.DayOfWeek - (int)DayOfWeek.Thursday + 7) % 7;
-                    var weekThursday = weekStart.AddDays(-daysSinceThursday);
-
-                    return weekThursday <= today;
-                })
-                .Select(x => x.Week)
+            var currentWeek = firstGameByWeek
+                .Where(kv => WeekRolloverDate(kv.Value) <= today)
+                .Select(kv => kv.Key)
                 .DefaultIfEmpty(1)
                 .Max();
 
             SetWeekSilent(currentWeek);
+        }
+
+        /// <summary>
+        /// The Tuesday on or before a week's earliest game — the day that week
+        /// becomes "current." A Tuesday game rolls over the same day; a Saturday
+        /// first game rolls over the Tuesday before it.
+        /// </summary>
+        private static DateTime WeekRolloverDate(DateTime firstGameDate)
+        {
+            var daysSinceTuesday = ((int)firstGameDate.DayOfWeek - (int)DayOfWeek.Tuesday + 7) % 7;
+            return firstGameDate.AddDays(-daysSinceTuesday);
         }
 
         // ── Cross-tab game navigation (2026-09-05) ─────────────────────────

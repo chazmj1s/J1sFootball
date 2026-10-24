@@ -120,12 +120,14 @@ namespace SaturdayPulse.ViewModels
             set => _navState.DefaultConference = value;
         }
 
-        // ── User preference: Default team (My Teams' primary team) ────────
-        // Lives on FollowService rather than SharedNavigationStateService —
-        // it's a team-follow concept (see FollowService.SetPrimaryTeam),
-        // not a game-data filter like DefaultWeek/DefaultConference.
+        // ── User preference: Default team ("My Team") ─────────────────────
+        // Persisted on SharedNavigationStateService.DefaultTeamId, same as
+        // DefaultWeek/DefaultConference (2026-10-24). Previously read back
+        // from FollowService.GetPrimaryTeamId(), which didn't survive a
+        // restart. SelectDefaultTeamCommand still calls
+        // FollowService.SetPrimaryTeam so My Teams picks the change up live.
         public string DefaultTeamDisplay =>
-            _followService.GetPrimaryTeamId() is int id
+            _navState.DefaultTeamId is int id
                 ? _teamCache.GetTeam(id)?.TeamName ?? "None"
                 : "None";
 
@@ -848,13 +850,16 @@ namespace SaturdayPulse.ViewModels
 
                 if (result == "None")
                 {
-                    await _followService.SetPrimaryTeam(null);
+                    _navState.DefaultTeamId = null;          // persists (Preferences)
+                    await _followService.SetPrimaryTeam(null); // live My Teams update
                 }
                 else
                 {
                     var team = _teamCache.Teams.FirstOrDefault(t => t.TeamName == result);
-                    if (team != null)
-                        await _followService.SetPrimaryTeam(team.TeamID);
+                    if (team == null) return;
+
+                    _navState.DefaultTeamId = team.TeamID;
+                    await _followService.SetPrimaryTeam(team.TeamID);
                 }
 
                 OnPropertyChanged(nameof(DefaultTeamDisplay));
@@ -1182,6 +1187,8 @@ namespace SaturdayPulse.ViewModels
                     OnPropertyChanged(nameof(DefaultWeek));
                 if (e.PropertyName == nameof(SharedNavigationStateService.DefaultConference))
                     OnPropertyChanged(nameof(DefaultConference));
+                if (e.PropertyName == nameof(SharedNavigationStateService.DefaultTeamId))
+                    OnPropertyChanged(nameof(DefaultTeamDisplay));
             };
         }
 
@@ -1503,8 +1510,8 @@ namespace SaturdayPulse.ViewModels
                 // DefaultTeamDisplay reads _teamCache.GetTeam(id), not
                 // _allTeams below — a completely separate cache from the
                 // GetTeamsAsync() call above, which only feeds this VM's own
-                // Favorites/Teams tab. If FollowService.GetPrimaryTeamId()
-                // resolves before TeamCacheService finishes loading,
+                // Favorites/Teams tab. If the saved DefaultTeamId is read
+                // before TeamCacheService finishes loading,
                 // GetTeam(id) returns null and DefaultTeamDisplay silently
                 // falls back to "None" — indistinguishable from "no primary
                 // team set." SelectDefaultTeamCommand already guards against
