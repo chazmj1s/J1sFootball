@@ -847,6 +847,9 @@ namespace SaturdayPulse.Services
         /// at all, so this no longer touches Lines. If odds ever need refreshing
         /// on demand again, that has to be a separate call back to /lines, not
         /// folded into this one.
+        ///
+        /// Scores go through IGamesRepository.ApplyScoresByTeamAsync (team-id
+        /// matched) — never assign HomePoints/AwayPoints directly here.
         /// </summary>
         public async Task<int> RefreshGameAsync(int gameId, CancellationToken token = default)
         {
@@ -864,29 +867,29 @@ namespace SaturdayPulse.Services
                 return 0;
             }
 
-            var homeTeam = dto.Teams.FirstOrDefault(t => t.HomeAway == "home");
-            var awayTeam = dto.Teams.FirstOrDefault(t => t.HomeAway == "away");
-
-            if (homeTeam == null || awayTeam == null)
+            // Teams are matched to the stored row by TeamId inside the repository —
+            // /live/plays' homeAway label is NOT used, it can disagree with /games
+            // on neutral-site games (Navy/Notre Dame 2026 wk 9).
+            var teams = dto.Teams.ToList();
+            if (teams.Count != 2)
             {
-                Console.WriteLine($"RefreshGameAsync: gameId={gameId} live response missing home/away team");
+                Console.WriteLine($"RefreshGameAsync: gameId={gameId} live response has {teams.Count} teams, expected 2");
                 return 0;
             }
 
-            var existing = await _uow.Games.GetByGameIdAsync(gameId, token);
-            if (existing == null)
-            {
-                Console.WriteLine($"RefreshGameAsync: no Games row found for gameId={gameId}");
-                return 0;
-            }
+            var applied = await _uow.Games.ApplyScoresByTeamAsync(
+                gameId,
+                new TeamScoreUpdate(teams[0].TeamId, teams[0].Points, null),
+                new TeamScoreUpdate(teams[1].TeamId, teams[1].Points, null),
+                token);
 
-            existing.HomePoints = homeTeam.Points;
-            existing.AwayPoints = awayTeam.Points;
+            if (!applied)
+                return 0;
 
             await _uow.SaveChangesAsync(token);
 
             Console.WriteLine($"RefreshGameAsync: gameId={gameId} → " +
-                $"{homeTeam.Points}-{awayTeam.Points} (status: {dto.Status})");
+                $"{teams[0].TeamId}:{teams[0].Points}, {teams[1].TeamId}:{teams[1].Points} (status: {dto.Status})");
 
             return 1;
         }

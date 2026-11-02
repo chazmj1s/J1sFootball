@@ -94,8 +94,10 @@ namespace SaturdayPulse.Repositories.Implementations
                 _context.Games.Add(game);
             else
             {
-                existing.HomePoints     = game.HomePoints;
-                existing.AwayPoints     = game.AwayPoints;
+                // Team identity must be synced BEFORE scores — see SyncTeamIdentity.
+                SyncTeamIdentity(existing, game);
+                ApplyScoresFromGame(existing, game);
+
                 existing.Attendance     = game.Attendance;
                 existing.NeutralSite    = game.NeutralSite;
                 existing.ConferenceGame = game.ConferenceGame;
@@ -238,8 +240,10 @@ namespace SaturdayPulse.Repositories.Implementations
             {
                 if (existing.TryGetValue(game.GameId, out var dbGame))
                 {
-                    dbGame.HomePoints     = game.HomePoints;
-                    dbGame.AwayPoints     = game.AwayPoints;
+                    // Team identity must be synced BEFORE scores — see SyncTeamIdentity.
+                    SyncTeamIdentity(dbGame, game);
+                    ApplyScoresFromGame(dbGame, game);
+
                     dbGame.Attendance     = game.Attendance;
                     dbGame.NeutralSite    = game.NeutralSite;
                     dbGame.ConferenceGame = game.ConferenceGame;
@@ -247,12 +251,131 @@ namespace SaturdayPulse.Repositories.Implementations
                     dbGame.KickoffTime    = game.KickoffTime;
                     dbGame.GameDate       = game.GameDate;
                     dbGame.GameDay        = game.GameDay;
-                    dbGame.HomeLineScores = game.HomeLineScores;
-                    dbGame.AwayLineScores = game.AwayLineScores;
+                    // Week / SeasonType intentionally NOT synced — owned by
+                    // AssignPostseasonWeeksAsync / SetSeasonTypeAsync.
                 }
                 else
                     _context.Games.Add(game);
             }
+        }
+
+        /// <summary>
+        /// Score-only update for an existing game, keyed by team id. Used by
+        /// partial sources (/live/plays, the game-day poller) that are NOT
+        /// authoritative for home/away designation — the stored row's
+        /// orientation is kept and each score is matched to its team by id.
+        /// Returns false (no change) if the row is missing or the two team ids
+        /// don't match the stored participants. Caller saves.
+        /// </summary>
+        public async Task<bool> ApplyScoresByTeamAsync(
+            int gameId, TeamScoreUpdate first, TeamScoreUpdate second, CancellationToken token = default)
+        {
+            var dbGame = await _context.Games.FirstOrDefaultAsync(g => g.GameId == gameId, token);
+            if (dbGame == null)
+            {
+                Console.WriteLine($"GamesRepository.ApplyScoresByTeamAsync: no Games row for gameId={gameId}");
+                return false;
+            }
+
+            return TryApplyScores(dbGame, first, second);
+        }
+
+        /// <summary>
+        /// Full-row upsert path (UpsertRangeAsync / UpsertAsync). Runs after
+        /// SyncTeamIdentity, so ids match the incoming orientation and the
+        /// shared resolver applies cleanly. TBD placeholders (null ids) have no
+        /// team to key on, so they fall back to a positional copy.
+        /// </summary>
+        private static void ApplyScoresFromGame(Games dbGame, Games incoming)
+        {
+            if (incoming.HomeId.HasValue && incoming.AwayId.HasValue &&
+                TryApplyScores(
+                    dbGame,
+                    new TeamScoreUpdate(incoming.HomeId.Value, incoming.HomePoints, incoming.HomeLineScores),
+                    new TeamScoreUpdate(incoming.AwayId.Value, incoming.AwayPoints, incoming.AwayLineScores)))
+                return;
+
+            dbGame.HomePoints     = incoming.HomePoints;
+            dbGame.AwayPoints     = incoming.AwayPoints;
+            dbGame.HomeLineScores = incoming.HomeLineScores;
+            dbGame.AwayLineScores = incoming.AwayLineScores;
+        }
+
+        /// <summary>
+        /// The single score writer for Games. Resolves each TeamScoreUpdate to
+        /// the stored Home/Away slot by TeamId, in either argument order.
+        /// LineScores null = leave stored value unchanged.
+        /// </summary>
+        private static bool TryApplyScores(Games dbGame, TeamScoreUpdate first, TeamScoreUpdate second)
+        {
+            TeamScoreUpdate home;
+            TeamScoreUpdate away;
+
+            if (dbGame.HomeId == first.TeamId && dbGame.AwayId == second.TeamId)
+            {
+                home = first;
+                away = second;
+            }
+            else if (dbGame.HomeId == second.TeamId && dbGame.AwayId == first.TeamId)
+            {
+                home = second;
+                away = first;
+            }
+            else
+            {
+                Console.WriteLine($"GamesRepository.TryApplyScores: gameId={dbGame.GameId} team mismatch — " +
+                                  $"stored {dbGame.HomeId}/{dbGame.AwayId}, incoming {first.TeamId}/{second.TeamId}; scores not applied");
+                return false;
+            }
+
+            dbGame.HomePoints = home.Points;
+            dbGame.AwayPoints = away.Points;
+
+            if (home.LineScores != null)
+                dbGame.HomeLineScores = home.LineScores;
+            if (away.LineScores != null)
+                dbGame.AwayLineScores = away.LineScores;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Syncs HomeId/HomeName/AwayId/AwayName on an existing row to the
+        /// incoming CFBD orientation. Scores and line scores are copied
+        /// positionally (Home→Home, Away→Away), so the stored team identity MUST
+        /// match the incoming orientation or the scores land on the wrong team.
+        ///
+        /// CFBD (via ESPN) re-designates home/away on neutral-site games after
+        /// initial scheduling — e.g. Navy/Notre Dame 2026 wk 9 (401859185) was
+        /// originally inserted ND-home, CFBD later reported Navy-home, and the
+        /// positional score copy put Navy's 13 on Notre Dame. CFBD's current
+        /// orientation is adopted (rather than swapping incoming values to fit
+        /// the stored row) so Games stays consistent with Lines, which
+        /// LoadLinesAsync reloads in CFBD's current home perspective.
+        ///
+        /// Also picks up TBD postseason opponents once CFBD fills them in.
+        /// Skipped when CFBD sends null ids so a known team is never blanked.
+        /// </summary>
+        private static void SyncTeamIdentity(Games dbGame, Games incoming)
+        {
+            if (!incoming.HomeId.HasValue || !incoming.AwayId.HasValue)
+                return;
+
+            if (dbGame.HomeId == incoming.HomeId && dbGame.AwayId == incoming.AwayId)
+                return;
+
+            var flipped = dbGame.HomeId == incoming.AwayId && dbGame.AwayId == incoming.HomeId;
+
+            Console.WriteLine(flipped
+                ? $"GamesRepository: gameId={dbGame.GameId} home/away re-designated by CFBD — " +
+                  $"was {dbGame.HomeName}(home) vs {dbGame.AwayName}, now {incoming.HomeName}(home) vs {incoming.AwayName}"
+                : $"GamesRepository: gameId={dbGame.GameId} participants changed — " +
+                  $"was {dbGame.HomeId}/{dbGame.AwayId}, now {incoming.HomeId}/{incoming.AwayId}");
+
+            dbGame.HomeId   = incoming.HomeId;
+            dbGame.HomeName = incoming.HomeName;
+            dbGame.AwayId   = incoming.AwayId;
+            dbGame.AwayName = incoming.AwayName;
         }
     }
 }
