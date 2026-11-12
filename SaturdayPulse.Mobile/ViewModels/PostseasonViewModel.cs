@@ -20,6 +20,14 @@ namespace SaturdayPulse.ViewModels
     /// committee's actual field, which is authoritative over our own
     /// projection), it switches to the existing real-bracket view and the
     /// seed table is dropped.
+    ///
+    /// Projections | CFP source toggle (2026-11-04): while no real bracket
+    /// exists, the header radios switch both sub-tabs between our projected
+    /// field (PlayoffSeedingService) and the CFP committee's rankings for the
+    /// header (year, week). CFP mode is a straight dump — committee rank 1–12
+    /// is seed 1–12, seeds 1–4 get byes, and the bracket shows only the
+    /// pairings known from rank (no projected scores or winners). CFP data
+    /// comes from the same polls endpoint the Rankings page uses.
     /// </summary>
     public class PostseasonViewModel : BaseViewModel
     {
@@ -33,6 +41,12 @@ namespace SaturdayPulse.ViewModels
         private string _selectedPlayoffSubView = "Projected Field";
         private string _statusMessage = "Loading...";
         private string _emptyMessage = "Loading...";
+
+        // ── Playoffs source: Projections | CFP (2026-11-04) ───────────────
+        private const string PlayoffSourceProjections = "Projections";
+        private const string PlayoffSourceCfp         = "CFP";
+        private string _playoffSource = PlayoffSourceProjections;
+        private int    _cfpWeek;
 
         public PostseasonViewModel(
             GameDataApiService apiService,
@@ -60,6 +74,14 @@ namespace SaturdayPulse.ViewModels
             SelectPlayoffSubViewCommand = new Microsoft.Maui.Controls.Command<string>(subView =>
             {
                 SelectedPlayoffSubView = subView;
+            });
+
+            // Header radios. CFP data is loaded with the projections, so
+            // switching source is display-only — no server call.
+            SelectPlayoffSourceCommand = new Microsoft.Maui.Controls.Command<string>(source =>
+            {
+                if (source is not (PlayoffSourceProjections or PlayoffSourceCfp)) return;
+                PlayoffSource = source;
             });
 
             ToggleMatchupExpandCommand = new Microsoft.Maui.Controls.Command<ChampionshipMatchup>(matchup =>
@@ -101,6 +123,11 @@ namespace SaturdayPulse.ViewModels
                 if (round != null) round.IsExpanded = !round.IsExpanded;
             });
 
+            ToggleCfpBracketRoundExpandCommand = new Microsoft.Maui.Controls.Command<CfpBracketRound>(round =>
+            {
+                if (round != null) round.IsExpanded = !round.IsExpanded;
+            });
+
             ToggleWeekendExpandCommand = new Microsoft.Maui.Controls.Command<BowlWeekendGroup>(weekend =>
             {
                 if (weekend != null) weekend.IsExpanded = !weekend.IsExpanded;
@@ -122,6 +149,12 @@ namespace SaturdayPulse.ViewModels
         /// <summary>Projected bracket, First Round through National Championship —
         /// populated only when HasPlayoffData is false, alongside PlayoffSeeds.</summary>
         public ObservableCollection<ProjectedBracketRound> BracketRounds { get; } = new();
+
+        /// <summary>CFP committee top 12 for the header week — seed = rank.</summary>
+        public ObservableCollection<CfpSeedRow>      CfpSeeds         { get; } = new();
+
+        /// <summary>CFP bracket built from CfpSeeds — pairings only, no projections.</summary>
+        public ObservableCollection<CfpBracketRound> CfpBracketRounds { get; } = new();
 
         // ── Bindable properties ───────────────────────────────────────────
 
@@ -153,6 +186,10 @@ namespace SaturdayPulse.ViewModels
 
         /// <summary>Seed table is the thing to show: no real bracket yet, but we have a projection.</summary>
         public bool IsSeedingView   => !HasPlayoffData && HasSeedingData;
+
+        /// <summary>True once CFP committee rankings exist for the header week.</summary>
+        public bool HasCfpData   => CfpSeeds.Any();
+        public bool HasNoCfpData => !HasCfpData;
 
         /// <summary>Either the real bracket or the projected seed table has something to show.</summary>
         public bool HasPlayoffOrSeedingData => HasPlayoffData || HasSeedingData;
@@ -196,11 +233,62 @@ namespace SaturdayPulse.ViewModels
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsProjectedFieldSubView));
                 OnPropertyChanged(nameof(IsBracketSubView));
+                RaisePlayoffDisplayProperties();
             }
         }
 
         public bool IsProjectedFieldSubView => _selectedPlayoffSubView == "Projected Field";
         public bool IsBracketSubView         => _selectedPlayoffSubView == "Bracket";
+
+        /// <summary>"Projections" or "CFP" — header radio selection.</summary>
+        public string PlayoffSource
+        {
+            get => _playoffSource;
+            set
+            {
+                if (_playoffSource == value) return;
+                _playoffSource = value;
+                OnPropertyChanged();
+                RaisePlayoffDisplayProperties();
+            }
+        }
+
+        public bool IsProjectionsSource => _playoffSource == PlayoffSourceProjections;
+        public bool IsCfpSource         => _playoffSource == PlayoffSourceCfp;
+
+        /// <summary>First sub-tab label — "Field" in CFP mode (committee's, not projected).</summary>
+        public string FieldSubTabLabel => IsCfpSource ? "Field" : "Projected Field";
+
+        // Sub-tab × source — one of these four content blocks is visible.
+        public bool ShowProjectedField   => IsProjectedFieldSubView && IsProjectionsSource;
+        public bool ShowCfpField         => IsProjectedFieldSubView && IsCfpSource;
+        public bool ShowProjectedBracket => IsBracketSubView        && IsProjectionsSource;
+        public bool ShowCfpBracket       => IsBracketSubView        && IsCfpSource;
+
+        public string CfpFootnote => $"*CFP Committee Rankings, Week {_cfpWeek} release";
+
+        public string CfpEmptyMessage => _cfpWeek > 0
+            ? $"No CFP Rankings for Week {_cfpWeek}"
+            : "No CFP Rankings for this view";
+
+        private void RaisePlayoffDisplayProperties()
+        {
+            OnPropertyChanged(nameof(IsProjectionsSource));
+            OnPropertyChanged(nameof(IsCfpSource));
+            OnPropertyChanged(nameof(FieldSubTabLabel));
+            OnPropertyChanged(nameof(ShowProjectedField));
+            OnPropertyChanged(nameof(ShowCfpField));
+            OnPropertyChanged(nameof(ShowProjectedBracket));
+            OnPropertyChanged(nameof(ShowCfpBracket));
+        }
+
+        private void RaiseCfpProperties()
+        {
+            OnPropertyChanged(nameof(HasCfpData));
+            OnPropertyChanged(nameof(HasNoCfpData));
+            OnPropertyChanged(nameof(CfpFootnote));
+            OnPropertyChanged(nameof(CfpEmptyMessage));
+        }
 
         // ── Commands ──────────────────────────────────────────────────────
 
@@ -208,6 +296,7 @@ namespace SaturdayPulse.ViewModels
         public ICommand RefreshCommand                { get; }
         public ICommand SelectViewCommand             { get; }
         public ICommand SelectPlayoffSubViewCommand   { get; }
+        public ICommand SelectPlayoffSourceCommand    { get; }
         public ICommand ToggleMatchupExpandCommand    { get; }
         public ICommand ToggleContendersExpandCommand { get; }
         public ICommand ToggleDetailsCommand          { get; }
@@ -215,6 +304,7 @@ namespace SaturdayPulse.ViewModels
         public ICommand ToggleCardContendersCommand   { get; }
         public ICommand ToggleRoundExpandCommand      { get; }
         public ICommand ToggleBracketRoundExpandCommand { get; }
+        public ICommand ToggleCfpBracketRoundExpandCommand { get; }
         public ICommand ToggleWeekendExpandCommand    { get; }
 
         // ── Load ──────────────────────────────────────────────────────────
@@ -255,11 +345,13 @@ namespace SaturdayPulse.ViewModels
                 {
                     await LoadPlayoffSeedingAsync();
                     await LoadPlayoffBracketAsync();
+                    await LoadCfpFieldAsync();
                 }
                 else
                 {
                     ClearPlayoffSeeding();
                     ClearPlayoffBracket();
+                    ClearCfpField();
                 }
 
                 StatusMessage = $"{_navState.SelectedYear} projections";
@@ -333,6 +425,112 @@ namespace SaturdayPulse.ViewModels
 
             BracketRounds.Clear();
             OnPropertyChanged(nameof(HasBracketData));
+        }
+
+        // ── Load CFP committee field + bracket ────────────────────────────
+
+        /// <summary>
+        /// CFP committee rankings for the header (year, week) via the polls
+        /// endpoint. Exact week match — a week before the first release, or the
+        /// Week 0 "Final" view, leaves CfpSeeds empty. Rank order is the seed
+        /// order; only the top 12 are kept.
+        /// </summary>
+        private async Task LoadCfpFieldAsync()
+        {
+            var year = _navState.SelectedYear;
+            var week = _navState.SelectedWeek;
+
+            PollWeekResponse? polls = null;
+            if (week > 0)
+            {
+                polls = await Task.Run(async () =>
+                    await _apiService.GetWeeklyPollsAsync(year, week));
+            }
+
+            var rows = (polls?.CFPRankings ?? new List<PollRankingDto>())
+                .OrderBy(r => r.Rank)
+                .Take(12)
+                .ToList();
+
+            _cfpWeek = week;
+
+            CfpSeeds.Clear();
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var r = rows[i];
+                CfpSeeds.Add(new CfpSeedRow(i + 1, r.TeamId, r.School ?? string.Empty, r.Conference));
+            }
+
+            BuildCfpBracket();
+            RaiseCfpProperties();
+        }
+
+        private void ClearCfpField()
+        {
+            if (CfpSeeds.Count == 0 && CfpBracketRounds.Count == 0) return;
+
+            CfpSeeds.Clear();
+            CfpBracketRounds.Clear();
+            RaiseCfpProperties();
+        }
+
+        /// <summary>
+        /// 12-team bracket from the committee seeds — only what rank decides:
+        /// First Round 5v12, 6v11, 7v10, 8v9; byes for 1–4 into the
+        /// Quarterfinals (1 v 8/9, 2 v 7/10, 3 v 6/11, 4 v 5/12); Semifinals
+        /// pair the 1 and 4 paths, and the 2 and 3 paths. No scores or winners.
+        /// </summary>
+        private void BuildCfpBracket()
+        {
+            CfpBracketRounds.Clear();
+            if (CfpSeeds.Count < 12) return;
+
+            CfpSeedRow Seed(int seed) => CfpSeeds[seed - 1];
+
+            static List<CfpBracketMatchup> Alternate(List<CfpBracketMatchup> games)
+            {
+                for (int i = 0; i < games.Count; i++)
+                    games[i].IsOddRow = i % 2 == 1;
+                return games;
+            }
+
+            CfpBracketMatchup SeedVsSeed(int high, int low) =>
+                CfpBracketMatchup.Seeded(Seed(high), Seed(low));
+
+            CfpBracketMatchup SeedVsWinner(int high, string winnerOf) =>
+                CfpBracketMatchup.SeedVsSlot(Seed(high), $"Winner {winnerOf}");
+
+            var firstRound = Alternate(new List<CfpBracketMatchup>
+            {
+                SeedVsSeed(5, 12),
+                SeedVsSeed(6, 11),
+                SeedVsSeed(7, 10),
+                SeedVsSeed(8, 9)
+            });
+
+            var quarterfinals = Alternate(new List<CfpBracketMatchup>
+            {
+                SeedVsWinner(1, "8/9"),
+                SeedVsWinner(2, "7/10"),
+                SeedVsWinner(3, "6/11"),
+                SeedVsWinner(4, "5/12")
+            });
+
+            var semifinals = Alternate(new List<CfpBracketMatchup>
+            {
+                CfpBracketMatchup.SlotVsSlot("Winner 1 v 8/9", "Winner 4 v 5/12"),
+                CfpBracketMatchup.SlotVsSlot("Winner 2 v 7/10", "Winner 3 v 6/11")
+            });
+
+            var championship = Alternate(new List<CfpBracketMatchup>
+            {
+                CfpBracketMatchup.SlotVsSlot("Winner Semifinal 1", "Winner Semifinal 2")
+            });
+
+            CfpBracketRounds.Add(new CfpBracketRound("First Round", firstRound));
+            CfpBracketRounds.Add(new CfpBracketRound("Quarterfinals", quarterfinals));
+            CfpBracketRounds.Add(new CfpBracketRound("Semifinals", semifinals));
+            CfpBracketRounds.Add(new CfpBracketRound("National Championship", championship));
         }
 
         // ── Build Bowls + Playoffs from cached schedule ───────────────────
@@ -554,6 +752,7 @@ namespace SaturdayPulse.ViewModels
                         {
                             await LoadPlayoffSeedingAsync();
                             await LoadPlayoffBracketAsync();
+                            await LoadCfpFieldAsync();
                         }
                     }
                     break;
@@ -635,6 +834,82 @@ namespace SaturdayPulse.ViewModels
         public string ExpandIcon => _isExpanded ? "▼" : "▶";
 
         public ProjectedBracketRound(string label, List<SaturdayPulse.Models.BracketMatchupResult> matchups)
+        {
+            RoundLabel = label;
+            Matchups   = matchups;
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string? name = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    /// <summary>One CFP committee seed row — straight from the committee's
+    /// rankings (seed = rank). Seeds 1–4 have first-round byes.</summary>
+    public sealed class CfpSeedRow
+    {
+        public int     Seed       { get; }
+        public int     TeamId     { get; }
+        public string  TeamName   { get; }
+        public string? Conference { get; }
+
+        public bool   HasBye           => Seed <= 4;
+        public string ConferenceSuffix => string.IsNullOrWhiteSpace(Conference) ? string.Empty : $" ({Conference})";
+
+        public CfpSeedRow(int seed, int teamId, string teamName, string? conference)
+        {
+            Seed       = seed;
+            TeamId     = teamId;
+            TeamName   = teamName;
+            Conference = conference;
+        }
+    }
+
+    /// <summary>One CFP bracket slot pairing. A side is either a seeded team
+    /// ("5. Alabama") or an unresolved slot ("Winner 8/9") — no scores.</summary>
+    public sealed class CfpBracketMatchup
+    {
+        public string Team1SeedText { get; }
+        public string Team1Name     { get; }
+        public string Team2Name     { get; }
+        public string Team2SeedText { get; }
+        public bool   IsOddRow      { get; set; }
+
+        private CfpBracketMatchup(string team1SeedText, string team1Name, string team2Name, string team2SeedText)
+        {
+            Team1SeedText = team1SeedText;
+            Team1Name     = team1Name;
+            Team2Name     = team2Name;
+            Team2SeedText = team2SeedText;
+        }
+
+        public static CfpBracketMatchup Seeded(CfpSeedRow high, CfpSeedRow low) =>
+            new($"{high.Seed}. ", high.TeamName, low.TeamName, $" .{low.Seed}");
+
+        public static CfpBracketMatchup SeedVsSlot(CfpSeedRow high, string slot) =>
+            new($"{high.Seed}. ", high.TeamName, slot, string.Empty);
+
+        public static CfpBracketMatchup SlotVsSlot(string slot1, string slot2) =>
+            new(string.Empty, slot1, slot2, string.Empty);
+    }
+
+    /// <summary>One round of the CFP committee bracket. Collapsible, same as
+    /// ProjectedBracketRound.</summary>
+    public class CfpBracketRound : INotifyPropertyChanged
+    {
+        public string RoundLabel { get; }
+        public List<CfpBracketMatchup> Matchups { get; }
+
+        private bool _isExpanded = true;
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set { _isExpanded = value; OnPropertyChanged(); OnPropertyChanged(nameof(ExpandIcon)); }
+        }
+
+        public string ExpandIcon => _isExpanded ? "▼" : "▶";
+
+        public CfpBracketRound(string label, List<CfpBracketMatchup> matchups)
         {
             RoundLabel = label;
             Matchups   = matchups;

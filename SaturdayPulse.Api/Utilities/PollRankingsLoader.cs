@@ -36,6 +36,7 @@ namespace SaturdayPulse.Utilities
     {
         public const string ApPollName = "AP Top 25";
         public const string CoachesPollName = "Coaches Poll";
+        public const string CFPRankings = "Playoff Committee Rankings";
 
         private const string RegularSeasonType = "regular";
 
@@ -170,11 +171,12 @@ namespace SaturdayPulse.Utilities
 
                 var ap = BuildRows(FindPoll(weekDto, ApPollName));
                 var coaches = BuildRows(FindPoll(weekDto, CoachesPollName));
+                var cfprankings = BuildRows(FindPoll(weekDto, CFPRankings));
 
-                if (ap.Count == 0 && coaches.Count == 0)
+                if (ap.Count == 0 && coaches.Count == 0 && cfprankings.Count == 0)
                     continue;
 
-                weeks[weekNumber] = new WeeklyPolls(year, weekNumber, ap, coaches);
+                weeks[weekNumber] = new WeeklyPolls(year, weekNumber, ap, coaches, cfprankings);
             }
 
             _logger.LogInformation(

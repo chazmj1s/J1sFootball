@@ -24,8 +24,10 @@ namespace SaturdayPulse.Models
         int Year,
         int Week,
         IReadOnlyList<PollRankingRow> ApPoll,
-        IReadOnlyList<PollRankingRow> CoachesPoll)
+        IReadOnlyList<PollRankingRow> CoachesPoll,
+        IReadOnlyList<PollRankingRow> CFPRankings)
+
     {
-        public static WeeklyPolls Empty(int year, int week) => new(year, week, [], []);
+        public static WeeklyPolls Empty(int year, int week) => new(year, week, [], [], []);
     }
 }

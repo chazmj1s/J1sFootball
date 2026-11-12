@@ -497,13 +497,51 @@
           <!-- ── Projected Seeding — shown before the committee sets the real field ── -->
           <VerticalStackLayout IsVisible="{Binding IsSeedingView}" Spacing="0">
 
-            <Grid BackgroundColor="{AppThemeBinding Light=#6B4EAE, Dark=#2A2040}"
-                  Padding="12,8">
-              <Label Text="Projections"
-                     FontSize="13" FontAttributes="Bold" TextColor="White" />
-            </Grid>
+            <!-- Source radios: ○ Projections ○ CFP (2026-11-04). Plain tappable
+                 glyph labels, same approach as the Rankings Top 25 radios.
+                 Drives both sub-tabs below. -->
+            <HorizontalStackLayout BackgroundColor="{AppThemeBinding Light=#6B4EAE, Dark=#2A2040}"
+                                   Padding="10,2" Spacing="12">
 
-            <!-- Sub-tab: Seeded Field | Bracket -->
+              <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
+                <Border.GestureRecognizers>
+                  <TapGestureRecognizer Command="{Binding SelectPlayoffSourceCommand}" CommandParameter="Projections" />
+                </Border.GestureRecognizers>
+                <Label FontSize="13" FontAttributes="Bold" TextColor="White" LineBreakMode="NoWrap">
+                  <Label.Triggers>
+                    <DataTrigger TargetType="Label" Binding="{Binding IsProjectionsSource}" Value="True">
+                      <Setter Property="Text" Value="● Projections" />
+                      <Setter Property="Opacity" Value="1" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Label" Binding="{Binding IsProjectionsSource}" Value="False">
+                      <Setter Property="Text" Value="○ Projections" />
+                      <Setter Property="Opacity" Value="0.6" />
+                    </DataTrigger>
+                  </Label.Triggers>
+                </Label>
+              </Border>
+
+              <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
+                <Border.GestureRecognizers>
+                  <TapGestureRecognizer Command="{Binding SelectPlayoffSourceCommand}" CommandParameter="CFP" />
+                </Border.GestureRecognizers>
+                <Label FontSize="13" FontAttributes="Bold" TextColor="White" LineBreakMode="NoWrap">
+                  <Label.Triggers>
+                    <DataTrigger TargetType="Label" Binding="{Binding IsCfpSource}" Value="True">
+                      <Setter Property="Text" Value="● CFP" />
+                      <Setter Property="Opacity" Value="1" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Label" Binding="{Binding IsCfpSource}" Value="False">
+                      <Setter Property="Text" Value="○ CFP" />
+                      <Setter Property="Opacity" Value="0.6" />
+                    </DataTrigger>
+                  </Label.Triggers>
+                </Label>
+              </Border>
+
+            </HorizontalStackLayout>
+
+            <!-- Sub-tab: Projected Field (CFP: Field) | Bracket -->
             <Grid ColumnDefinitions="*,*"
                   BackgroundColor="{AppThemeBinding Light=#F0F0F0, Dark=#181818}"
                   Padding="8,4">
@@ -511,7 +549,7 @@
                 <Border.GestureRecognizers>
                   <TapGestureRecognizer Command="{Binding SelectPlayoffSubViewCommand}" CommandParameter="Projected Field" />
                 </Border.GestureRecognizers>
-                <Label Text="Projected Field" FontSize="12" FontAttributes="Bold">
+                <Label Text="{Binding FieldSubTabLabel}" FontSize="12" FontAttributes="Bold">
                   <Label.Triggers>
                     <DataTrigger TargetType="Label" Binding="{Binding IsProjectedFieldSubView}" Value="True">
                       <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
@@ -543,8 +581,8 @@
               </Border>
             </Grid>
 
-            <!-- Projected Field sub-view -->
-            <VerticalStackLayout IsVisible="{Binding IsProjectedFieldSubView}" Spacing="0">
+            <!-- Projected Field sub-view (Projections source) -->
+            <VerticalStackLayout IsVisible="{Binding ShowProjectedField}" Spacing="0">
 
               <Label Text="*Seeded by calculated Team Rating which incorporates SOS and Record."
                      FontSize="10" Opacity="0.6" Padding="12,6,12,6" />
@@ -604,8 +642,59 @@
 
             </VerticalStackLayout>
 
-            <!-- Bracket sub-view -->
-            <VerticalStackLayout IsVisible="{Binding IsBracketSubView}" Spacing="0"
+            <!-- CFP Field sub-view — committee top 12, seed = rank; 1–4 shaded (byes) -->
+            <VerticalStackLayout IsVisible="{Binding ShowCfpField}" Spacing="0">
+
+              <Label Text="{Binding CfpEmptyMessage}"
+                     IsVisible="{Binding HasNoCfpData}"
+                     FontSize="13" Opacity="0.6" HorizontalOptions="Center"
+                     Margin="0,30,0,0"
+                     TextColor="{AppThemeBinding Light=#888888, Dark=#777777}" />
+
+              <VerticalStackLayout IsVisible="{Binding HasCfpData}" Spacing="0">
+
+                <Label Text="{Binding CfpFootnote}"
+                       FontSize="10" Opacity="0.6" Padding="12,6,12,6" />
+
+                <Grid ColumnDefinitions="28,*" Padding="10,2,10,4" ColumnSpacing="6">
+                  <Label Grid.Column="0" Text="Seed" FontSize="9" FontAttributes="Bold" Opacity="0.5" />
+                  <Label Grid.Column="1" Text="Team" FontSize="9" FontAttributes="Bold" Opacity="0.5" />
+                </Grid>
+
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding CfpSeeds}" Spacing="0">
+                  <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CfpSeedRow">
+                      <Grid ColumnDefinitions="28,*" Padding="10,6" ColumnSpacing="6">
+                        <Grid.Triggers>
+                          <DataTrigger TargetType="Grid" Binding="{Binding HasBye}" Value="True">
+                            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFF3E0, Dark=#2A2013}" />
+                          </DataTrigger>
+                        </Grid.Triggers>
+
+                        <Label Grid.Column="0" Text="{Binding Seed}"
+                               FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+
+                        <Label Grid.Column="1" FontSize="13" VerticalOptions="Center" LineBreakMode="TailTruncation">
+                          <Label.FormattedText>
+                            <FormattedString>
+                              <Span Text="{Binding TeamName}" />
+                              <Span Text="{Binding ConferenceSuffix}"
+                                    FontSize="10"
+                                    TextColor="{AppThemeBinding Light=#888888, Dark=#777777}" />
+                            </FormattedString>
+                          </Label.FormattedText>
+                        </Label>
+                      </Grid>
+                    </DataTemplate>
+                  </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+              </VerticalStackLayout>
+
+            </VerticalStackLayout>
+
+            <!-- Bracket sub-view (Projections source) -->
+            <VerticalStackLayout IsVisible="{Binding ShowProjectedBracket}" Spacing="0"
                                  BindableLayout.ItemsSource="{Binding BracketRounds}">
               <BindableLayout.ItemTemplate>
                 <DataTemplate x:DataType="vm:ProjectedBracketRound">
@@ -686,6 +775,84 @@
                   </VerticalStackLayout>
                 </DataTemplate>
               </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+            <!-- CFP Bracket sub-view — pairings decided by committee rank only;
+                 later rounds show the winner slots, no scores (first pass). -->
+            <VerticalStackLayout IsVisible="{Binding ShowCfpBracket}" Spacing="0">
+
+              <Label Text="{Binding CfpEmptyMessage}"
+                     IsVisible="{Binding HasNoCfpData}"
+                     FontSize="13" Opacity="0.6" HorizontalOptions="Center"
+                     Margin="0,30,0,0"
+                     TextColor="{AppThemeBinding Light=#888888, Dark=#777777}" />
+
+              <VerticalStackLayout IsVisible="{Binding HasCfpData}" Spacing="0"
+                                   BindableLayout.ItemsSource="{Binding CfpBracketRounds}">
+                <BindableLayout.ItemTemplate>
+                  <DataTemplate x:DataType="vm:CfpBracketRound">
+                    <VerticalStackLayout Spacing="0">
+
+                      <!-- Round header — tappable to collapse/expand -->
+                      <Grid BackgroundColor="{AppThemeBinding Light=#6B4EAE, Dark=#2A2040}"
+                            Padding="12,8" ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="{Binding RoundLabel}"
+                               FontSize="13" FontAttributes="Bold" TextColor="White"
+                               VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="{Binding ExpandIcon}"
+                               FontSize="10" TextColor="White"
+                               VerticalOptions="Center" />
+                        <Grid.GestureRecognizers>
+                          <TapGestureRecognizer
+                              Command="{Binding Source={x:Reference ThisPage}, Path=BindingContext.ToggleCfpBracketRoundExpandCommand}"
+                              CommandParameter="{Binding .}" />
+                        </Grid.GestureRecognizers>
+                      </Grid>
+
+                      <!-- Matchups — collapsible -->
+                      <VerticalStackLayout IsVisible="{Binding IsExpanded}"
+                                           BindableLayout.ItemsSource="{Binding Matchups}" Spacing="0">
+                        <BindableLayout.ItemTemplate>
+                          <DataTemplate x:DataType="vm:CfpBracketMatchup">
+                            <Grid ColumnDefinitions="*,Auto,*" Padding="12,8" ColumnSpacing="8">
+                              <Grid.Triggers>
+                                <DataTrigger TargetType="Grid" Binding="{Binding IsOddRow}" Value="True">
+                                  <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FAFAFA, Dark=#1C1C1C}" />
+                                </DataTrigger>
+                              </Grid.Triggers>
+
+                              <Label Grid.Column="0" VerticalOptions="Center" FontSize="13" LineBreakMode="TailTruncation">
+                                <Label.FormattedText>
+                                  <FormattedString>
+                                    <Span Text="{Binding Team1SeedText}" FontAttributes="Bold" />
+                                    <Span Text="{Binding Team1Name}" />
+                                  </FormattedString>
+                                </Label.FormattedText>
+                              </Label>
+
+                              <Label Grid.Column="1" Text="vs"
+                                     HorizontalOptions="Center" VerticalOptions="Center"
+                                     FontSize="11" Opacity="0.6" />
+
+                              <Label Grid.Column="2" HorizontalOptions="End" VerticalOptions="Center"
+                                     FontSize="13" LineBreakMode="TailTruncation">
+                                <Label.FormattedText>
+                                  <FormattedString>
+                                    <Span Text="{Binding Team2Name}" />
+                                    <Span Text="{Binding Team2SeedText}" FontAttributes="Bold" />
+                                  </FormattedString>
+                                </Label.FormattedText>
+                              </Label>
+                            </Grid>
+                          </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                      </VerticalStackLayout>
+
+                    </VerticalStackLayout>
+                  </DataTemplate>
+                </BindableLayout.ItemTemplate>
+              </VerticalStackLayout>
+
             </VerticalStackLayout>
 
           </VerticalStackLayout>
