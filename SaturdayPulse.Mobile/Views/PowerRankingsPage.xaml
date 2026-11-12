@@ -13,10 +13,11 @@
   <Grid RowDefinitions="Auto,Auto,*,24">
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!-- ROW 0: Teams | Conferences | Top 25: ○ J1s ○ AP ○ Coaches -->
+    <!-- ROW 0: Teams | Conferences | ○ J1s ○ AP ○ Coaches ○ CFP -->
     <!-- The radios are the action (source + switch to Top 25); -->
-    <!-- "Top 25:" is a caption only. Radios are plain tappable -->
-    <!-- glyph labels, not native RadioButton (renders         -->
+    <!-- the "Top 25:" caption was dropped (2026-11-04) to make -->
+    <!-- room for CFP — Top 25 is implied. Radios are plain     -->
+    <!-- tappable glyph labels, not native RadioButton (renders -->
     <!-- inconsistently across iOS/Android).                    -->
     <!-- Font sizes trimmed 14→13 (tabs) / 12 (radios) so the   -->
     <!-- full row fits a 375pt-wide phone without wrapping.     -->
@@ -65,24 +66,11 @@
         </Label>
       </Border>
 
-      <!-- Top 25 caption + source radios, right-aligned -->
+      <!-- Top 25 source radios, right-aligned -->
       <HorizontalStackLayout Grid.Column="2"
                              HorizontalOptions="End"
                              VerticalOptions="Center"
                              Spacing="6">
-
-        <Label Text="Top 25:"
-               FontSize="13" FontAttributes="Bold" LineBreakMode="NoWrap"
-               VerticalOptions="Center">
-          <Label.Triggers>
-            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="True">
-              <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
-            </DataTrigger>
-            <DataTrigger TargetType="Label" Binding="{Binding IsTop25View}" Value="False">
-              <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
-            </DataTrigger>
-          </Label.Triggers>
-        </Label>
 
         <!-- ○ J1s -->
         <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
@@ -135,6 +123,25 @@
               </DataTrigger>
               <DataTrigger TargetType="Label" Binding="{Binding IsCoachesSourceSelected}" Value="False">
                 <Setter Property="Text" Value="○ Coaches" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
+              </DataTrigger>
+            </Label.Triggers>
+          </Label>
+        </Border>
+
+        <!-- ○ CFP -->
+        <Border VerticalOptions="Center" Padding="2,6" StrokeThickness="0" BackgroundColor="Transparent">
+          <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding SelectTop25SourceCommand}" CommandParameter="CFP" />
+          </Border.GestureRecognizers>
+          <Label FontSize="12" FontAttributes="Bold" LineBreakMode="NoWrap">
+            <Label.Triggers>
+              <DataTrigger TargetType="Label" Binding="{Binding IsCfpSourceSelected}" Value="True">
+                <Setter Property="Text" Value="● CFP" />
+                <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentPrimaryLight}, Dark={StaticResource AccentPrimaryDark}}" />
+              </DataTrigger>
+              <DataTrigger TargetType="Label" Binding="{Binding IsCfpSourceSelected}" Value="False">
+                <Setter Property="Text" Value="○ CFP" />
                 <Setter Property="TextColor" Value="{AppThemeBinding Light=#888888, Dark=#666666}" />
               </DataTrigger>
             </Label.Triggers>
@@ -947,9 +954,11 @@
     <!-- ═══════════════════════════════════════════════════ -->
     <!-- ROW 2c: Top 25 — two columns                         -->
     <!-- J1s: by OverallRank, 1–12 left / 13–25 right.        -->
-    <!-- AP / Coaches: poll order, first 12 left / rest right; -->
-    <!-- badge shows RankDisplay ("T-14" on ties); Record =   -->
-    <!-- first-place votes, DisplayRating = poll points.      -->
+    <!-- AP / Coaches / CFP: poll order, first 12 left / rest  -->
+    <!-- right; badge shows RankDisplay ("T-14" on ties).     -->
+    <!-- AP/Coaches: Record = first-place votes, Rating =     -->
+    <!-- points. CFP: both empty → second line hidden via     -->
+    <!-- Opacity (keeps card height equal across sources).    -->
     <!-- Ignores filters/favorites in every source.           -->
     <!-- ═══════════════════════════════════════════════════ -->
     <RefreshView Grid.Row="2"
@@ -1019,10 +1028,16 @@
                     </Label.FormattedText>
                   </Label>
 
-                  <!-- J1s: actual record · Rating   |   Poll: first-place votes · points -->
+                  <!-- J1s: actual record · Rating   |   AP/Coaches: first-place votes · points
+                       CFP: no data — Record is empty, so the line goes transparent -->
                   <Label Grid.Row="1" Grid.Column="1"
                          FontSize="10" LineBreakMode="TailTruncation"
                          TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}">
+                    <Label.Triggers>
+                      <DataTrigger TargetType="Label" Binding="{Binding Record.Length}" Value="0">
+                        <Setter Property="Opacity" Value="0" />
+                      </DataTrigger>
+                    </Label.Triggers>
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="{Binding Record}" />
@@ -1082,10 +1097,16 @@
                     </Label.FormattedText>
                   </Label>
 
-                  <!-- J1s: actual record · Rating   |   Poll: first-place votes · points -->
+                  <!-- J1s: actual record · Rating   |   AP/Coaches: first-place votes · points
+                       CFP: no data — Record is empty, so the line goes transparent -->
                   <Label Grid.Row="1" Grid.Column="1"
                          FontSize="10" LineBreakMode="TailTruncation"
                          TextColor="{AppThemeBinding Light=#99000000, Dark=#99FFFFFF}">
+                    <Label.Triggers>
+                      <DataTrigger TargetType="Label" Binding="{Binding Record.Length}" Value="0">
+                        <Setter Property="Opacity" Value="0" />
+                      </DataTrigger>
+                    </Label.Triggers>
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="{Binding Record}" />

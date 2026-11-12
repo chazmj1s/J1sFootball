@@ -11,6 +11,7 @@ namespace SaturdayPulse.Models
         public int Week { get; set; }
         public List<PollRankingDto>? ApPoll { get; set; } = new();
         public List<PollRankingDto>? CoachesPoll { get; set; } = new();
+        public List<PollRankingDto>? CFPRankings { get; set; } = new();
     }
 
     /// <summary>

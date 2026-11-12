@@ -32,12 +32,13 @@ namespace SaturdayPulse.ViewModels
         private RankingSort   _confSort              = RankingSort.Rank;
         private bool          _isConfSortAscending   = true;
 
-        // ── Top 25 source: J1s | AP | Coaches (2026-10-18) ─────────────────
-        // J1s = existing OverallRank top 25. AP/Coaches = CFBD polls for the
-        // same (year, week), fetched alongside rankings in LoadDataAsync.
+        // ── Top 25 source: J1s | AP | Coaches | CFP (2026-10-18, CFP 2026-11-04)
+        // J1s = existing OverallRank top 25. AP/Coaches/CFP = CFBD rankings for
+        // the same (year, week), fetched alongside rankings in LoadDataAsync.
         private const string SourceJ1s     = "J1s";
         private const string SourceAp      = "AP";
         private const string SourceCoaches = "Coaches";
+        private const string SourceCfp     = "CFP";
         private string            _top25Source = SourceJ1s;
         private PollWeekResponse? _polls;
 
@@ -210,7 +211,7 @@ namespace SaturdayPulse.ViewModels
             // rankings, so switching source is a local rebuild, no server call.
             SelectTop25SourceCommand = new Microsoft.Maui.Controls.Command<string>(source =>
             {
-                if (source is not (SourceJ1s or SourceAp or SourceCoaches)) return;
+                if (source is not (SourceJ1s or SourceAp or SourceCoaches or SourceCfp)) return;
 
                 var changed = _top25Source != source;
                 _top25Source = source;
@@ -284,6 +285,7 @@ namespace SaturdayPulse.ViewModels
         public bool IsJ1sSourceSelected     => IsTop25View && _top25Source == SourceJ1s;
         public bool IsApSourceSelected      => IsTop25View && _top25Source == SourceAp;
         public bool IsCoachesSourceSelected => IsTop25View && _top25Source == SourceCoaches;
+        public bool IsCfpSourceSelected     => IsTop25View && _top25Source == SourceCfp;
 
         /// <summary>
         /// Empty-state text for the Top 25 view. J1s mirrors EmptyMessage; a poll
@@ -296,7 +298,12 @@ namespace SaturdayPulse.ViewModels
                 if (_top25Source == SourceJ1s || IsBusy)
                     return EmptyMessage;
 
-                var pollName = _top25Source == SourceAp ? "AP Top 25" : "Coaches Poll";
+                var pollName = _top25Source switch
+                {
+                    SourceAp      => "AP Top 25",
+                    SourceCoaches => "Coaches Poll",
+                    _             => "CFP Rankings"
+                };
                 var week = _navState.SelectedWeek;
                 return week > 0
                     ? $"No {pollName} for Week {week}"
@@ -309,6 +316,7 @@ namespace SaturdayPulse.ViewModels
             OnPropertyChanged(nameof(IsJ1sSourceSelected));
             OnPropertyChanged(nameof(IsApSourceSelected));
             OnPropertyChanged(nameof(IsCoachesSourceSelected));
+            OnPropertyChanged(nameof(IsCfpSourceSelected));
             OnPropertyChanged(nameof(Top25EmptyMessage));
         }
 
@@ -477,7 +485,7 @@ namespace SaturdayPulse.ViewModels
                 var year = _navState.SelectedYear;
                 var week = _navState.SelectedWeek;
 
-                // AP/Coaches polls for the same (year, week), fetched in parallel
+                // AP/Coaches/CFP rankings for the same (year, week), fetched in parallel
                 // with rankings. GetWeeklyPollsAsync never throws (returns null on
                 // failure), so this task can't fault unobserved if rankings throws.
                 // Week 0 is the season-final view — no poll lookup.
@@ -704,11 +712,13 @@ namespace SaturdayPulse.ViewModels
         ///
         /// J1s: national top 25 by OverallRank from _allTeams, split 1–12 left /
         ///      13–25 right.
-        /// AP / Coaches: CFBD poll rows for the loaded week, in the server's
-        ///      order. Split by position (first 12 left, rest right) rather than
-        ///      by rank — ties make rank numbers non-sequential, and a tie at 25
-        ///      produces a 26th row. Same card layout; Record shows first-place
-        ///      votes and Rating shows poll points. Team name/abbreviation come
+        /// AP / Coaches / CFP: CFBD poll rows for the loaded week, in the
+        ///      server's order. Split by position (first 12 left, rest right)
+        ///      rather than by rank — ties make rank numbers non-sequential, and a
+        ///      tie at 25 produces a 26th row. Same card layout; AP/Coaches show
+        ///      first-place votes in Record and poll points in Rating. CFP has no
+        ///      votes/points, so both are blank (the XAML hides the second line
+        ///      when Record is empty). Team name/abbreviation come
         ///      from _allTeams by TeamID when available so naming matches the
         ///      rest of the app; the poll's own school/conference is the fallback.
         /// </summary>
@@ -741,8 +751,15 @@ namespace SaturdayPulse.ViewModels
             }
             else
             {
-                var rows = (_top25Source == SourceAp ? _polls?.ApPoll : _polls?.CoachesPoll)
+                var rows = _top25Source switch
+                           {
+                               SourceAp      => _polls?.ApPoll,
+                               SourceCoaches => _polls?.CoachesPoll,
+                               _             => _polls?.CFPRankings
+                           }
                            ?? new List<PollRankingDto>();
+
+                var isCfp = _top25Source == SourceCfp;
 
                 var teamsById = _allTeams
                     .GroupBy(t => t.TeamID)
@@ -761,8 +778,8 @@ namespace SaturdayPulse.ViewModels
                                              : r.DisplayRank,
                         TeamName       = t?.TeamName ?? r.School ?? string.Empty,
                         ConferenceAbbr = t?.ConferenceAbbr ?? r.Conference,
-                        Record         = $"{r.FirstPlaceVotes ?? 0} 1st",
-                        DisplayRating  = $"{r.Points ?? 0:N0} pts",
+                        Record         = isCfp ? string.Empty : $"{r.FirstPlaceVotes ?? 0} 1st",
+                        DisplayRating  = isCfp ? string.Empty : $"{r.Points ?? 0:N0} pts",
                         IsOddRow       = index % 2 == 1
                     };
                 }
