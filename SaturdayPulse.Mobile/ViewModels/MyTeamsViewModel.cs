@@ -202,19 +202,14 @@ namespace SaturdayPulse.ViewModels
             });
 
             // Gated Details paywall message (2026-07-25) — tapping the
-            // locked Vegas/projections message routes through the same
-            // login-check EntitlementService uses for Settings' Season Pass
-            // button. This ViewModel doesn't need to track its own
-            // IsLoggedIn/profile fields for this — EntitlementService
-            // already applied any fresh profile internally.
+            // locked Vegas/projections message runs the same shared purchase
+            // flow as Settings' Season Pass button (2026-11-12: replaces the
+            // "Coming soon" placeholder). EntitlementService applies every
+            // fresh profile itself, so HasSeasonPass updates here through
+            // OnEntitlementChanged. No support email is known on this tab,
+            // so configuration failures show OK-only.
             SeasonPassCommand = new Command(async () =>
-            {
-                var result = await _entitlementService.EnsureLoggedInForPurchaseAsync();
-                if (!result.CanProceed) return;
-
-                await Shell.Current.DisplayAlert(
-                    "Season Pass", "Coming soon — payment isn't wired up yet.", "OK");
-            });
+                await _entitlementService.PurchaseWithRecoveryAsync());
 
             // Mirrors ScheduleViewModel's TogglePersonalGameCommand exactly.
             TogglePersonalGameCommand = new Command<GameResult>(game =>

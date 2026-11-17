@@ -138,13 +138,46 @@ namespace SaturdayPulse.Services
             }
         }
 
+        /// <summary>
+        /// Ends the session on this device: clears stored tokens and forces
+        /// the next login to ask for credentials (prompt=login), then ends
+        /// the Auth0 browser session where the platform allows it.
+        ///
+        /// Local state is cleared FIRST so a failed or abandoned browser
+        /// logout can never leave the app half logged in.
+        ///
+        /// Windows (2026-11-12): the browser logout is skipped. The Windows
+        /// WebAuthenticator appends a per-attempt ?state={appInstanceKey,
+        /// taskId} to the returnTo URL, and Auth0 requires an exact match
+        /// (query string included) against Allowed Logout URLs, so every
+        /// Windows logout failed with "returnTo ... is not defined as a
+        /// valid URL". Skipping it is safe: _forcePromptOnNextLogin makes
+        /// the next login show the credentials page even though the Auth0
+        /// browser cookie is still present. iOS/Android are unaffected and
+        /// keep the full browser logout.
+        /// </summary>
         public async Task LogoutAsync()
         {
-            await _auth0Client.LogoutAsync();
             _forcePromptOnNextLogin = true;
             SecureStorage.Default.Remove(AccessTokenKey);
             SecureStorage.Default.Remove(RefreshTokenKey);
             SecureStorage.Default.Remove(ExpiresAtKey);
+
+#if WINDOWS
+            await Task.CompletedTask;
+#else
+            try
+            {
+                await _auth0Client.LogoutAsync();
+            }
+            catch (Exception ex)
+            {
+                // Local session is already cleared; a browser-side failure
+                // (user closed the sheet, network) only leaves the Auth0
+                // cookie, which prompt=login on the next login overrides.
+                System.Diagnostics.Debug.WriteLine($"[Auth] Auth0 browser logout failed: {ex.Message}");
+            }
+#endif
         }
 
         /// <summary>

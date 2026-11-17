@@ -1018,67 +1018,22 @@ namespace SaturdayPulse.ViewModels
             // exists. This command just applies the freshly-fetched profile
             // to its own local bound properties if a new login just happened
             // (EntitlementService already has it either way).
+            // Full purchase flow (login gate, store, recovery prompts,
+            // post-purchase refresh) lives in EntitlementService so every
+            // paywall behaves the same. Fresh profiles come back through
+            // OnEntitlementProfileRefreshed.
             SeasonPassCommand = new Microsoft.Maui.Controls.Command(async () =>
-            {
-                var result = await _entitlementService.EnsureLoggedInForPurchaseAsync();
-                if (!result.CanProceed) return;
-
-                if (result.FreshProfile != null)
-                {
-                    ApplyProfile(result.FreshProfile);
-                    IsLoggedIn = true;
-                }
-
-                var purchase = await _entitlementService.PurchaseSeasonPassAsync();
-                if (purchase.Status != SeasonPassPurchaseStatus.Cancelled)
-                {
-                    await Shell.Current.DisplayAlert("Season Pass", purchase.Message, "OK");
-                }
-
-                if (purchase.Status == SeasonPassPurchaseStatus.Purchased)
-                {
-                    await RefreshProfileAfterPurchaseAsync();
-                }
-            });
+                await _entitlementService.PurchaseWithRecoveryAsync(SupportEmail));
 
             // Restore Purchases (App Store requirement for auto-renewing
-            // subscriptions). Same login gate as purchase; on success the
-            // profile is re-fetched so the panel reflects the server row.
+            // subscriptions) - same shared flow; status text shown while it runs.
             RestorePurchasesCommand = new Microsoft.Maui.Controls.Command(async () =>
             {
                 const string restoringMessage = "Restoring purchases...";
-
+                StatusMessage = restoringMessage;
                 try
                 {
-                    var result = await _entitlementService.EnsureLoggedInForPurchaseAsync();
-                    if (!result.CanProceed) return;
-
-                    if (result.FreshProfile != null)
-                    {
-                        ApplyProfile(result.FreshProfile);
-                        IsLoggedIn = true;
-                    }
-
-                    StatusMessage = restoringMessage;
-                    System.Diagnostics.Debug.WriteLine("[Restore] Starting restore.");
-
-                    var restore = await _entitlementService.RestoreSeasonPassAsync();
-                    System.Diagnostics.Debug.WriteLine($"[Restore] Finished: {restore.Status} - {restore.Message}");
-
-                    await Shell.Current.DisplayAlert("Restore Purchases", restore.Message, "OK");
-
-                    if (restore.Status == SeasonPassPurchaseStatus.Purchased)
-                    {
-                        await RefreshProfileAfterPurchaseAsync();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Restore] Unexpected error: {ex}");
-                    await Shell.Current.DisplayAlert(
-                        "Restore Purchases",
-                        "Something went wrong restoring purchases. Please try again.",
-                        "OK");
+                    await _entitlementService.RestoreWithPromptAsync();
                 }
                 finally
                 {
@@ -1134,20 +1089,7 @@ namespace SaturdayPulse.ViewModels
             // No-ops quietly if content hasn't loaded yet (SupportEmail
             // still empty) rather than opening a blank mailto: link.
             EmailSupportCommand = new Microsoft.Maui.Controls.Command(async () =>
-            {
-                if (string.IsNullOrWhiteSpace(SupportEmail)) return;
-
-                try
-                {
-                    var subject = Uri.EscapeDataString("J1S Sports feedback");
-                    await Launcher.Default.OpenAsync(new Uri($"mailto:{SupportEmail}?subject={subject}"));
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Settings] Error opening mail app: {ex.Message}");
-                    StatusMessage = "Couldn't open your mail app.";
-                }
-            });
+                await OpenSupportEmailAsync("J1S Sports feedback"));
 
             CloseCommand = new Microsoft.Maui.Controls.Command(() =>
                 CloseRequested?.Invoke(this, EventArgs.Empty));
@@ -1172,6 +1114,10 @@ namespace SaturdayPulse.ViewModels
             _followService.TeamFollowChanged         += OnTeamFollowChanged;
             _followService.PrimaryTeamChanged        += _ => OnPropertyChanged(nameof(DefaultTeamDisplay));
             _personalGameService.GameFavoritedChange += OnGameFavoritedChange;
+
+            // Profiles fetched by EntitlementService's purchase/restore flows
+            // (from this tab or any other paywall) - keep this panel in sync.
+            _entitlementService.ProfileRefreshed     += OnEntitlementProfileRefreshed;
 
             _navState.PropertyChanged += (s, e) =>
             {
@@ -1323,29 +1269,36 @@ namespace SaturdayPulse.ViewModels
             return true;
         }
 
+        // ── Season Pass ───────────────────────────────────────────────────
+
         /// <summary>
-        /// After a purchase or restore, the store confirms immediately but the
-        /// server entitlement row is written by the RevenueCat webhook a few
-        /// seconds later. Re-fetches the profile until a store-backed
-        /// entitlement shows as active (or attempts run out), applying each
-        /// result so the Season Pass panel updates as soon as the row lands.
+        /// EntitlementService.ProfileRefreshed handler (raised on the main
+        /// thread) - a login or post-purchase/restore refresh happened inside
+        /// the shared purchase flow, possibly started from another tab.
+        /// ApplyProfile forwards to EntitlementService.ApplyProfile, which
+        /// does not raise ProfileRefreshed, so this can't loop.
         /// </summary>
-        private async Task RefreshProfileAfterPurchaseAsync()
+        private void OnEntitlementProfileRefreshed(UserProfileDto profile)
         {
-            const int maxAttempts = 6;
+            ApplyProfile(profile);
+            IsLoggedIn = true;
+        }
 
-            for (var attempt = 0; attempt < maxAttempts; attempt++)
+        /// <summary>Opens the device mail app addressed to SupportEmail. No-ops
+        /// quietly if content hasn't loaded yet (SupportEmail still empty).</summary>
+        private async Task OpenSupportEmailAsync(string subjectText)
+        {
+            if (string.IsNullOrWhiteSpace(SupportEmail)) return;
+
+            try
             {
-                if (attempt > 0) await Task.Delay(TimeSpan.FromSeconds(2));
-
-                var profile = await _userApi.GetMeAsync();
-                if (profile == null) continue;
-
-                ApplyProfile(profile);
-
-                var storeBackedActive = profile.Entitlements.Any(e =>
-                    e.IsActive && e.Source is "apple" or "google" or "revenuecat-test");
-                if (storeBackedActive) return;
+                var subject = Uri.EscapeDataString(subjectText);
+                await Launcher.Default.OpenAsync(new Uri($"mailto:{SupportEmail}?subject={subject}"));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Settings] Error opening mail app: {ex.Message}");
+                StatusMessage = "Couldn't open your mail app.";
             }
         }
 
