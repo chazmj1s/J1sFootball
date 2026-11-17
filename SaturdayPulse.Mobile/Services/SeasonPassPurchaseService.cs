@@ -11,12 +11,39 @@ namespace SaturdayPulse.Services
         Pending,
         Unavailable,
         NothingToRestore,
-        Failed
+        Failed,
+
+        /// <summary>The store refused to start the purchase on this device/account
+        /// (not signed in to the store, no payment method, or purchases restricted).</summary>
+        NotAllowed
+    }
+
+    /// <summary>What the UI should offer the user after a failed purchase.</summary>
+    public enum SeasonPassRecoveryAction
+    {
+        /// <summary>Just show the message.</summary>
+        None,
+
+        /// <summary>Transient store/network problem - offer "Try Again".</summary>
+        Retry,
+
+        /// <summary>This store account already owns the pass - offer Restore Purchases.</summary>
+        RestorePurchases,
+
+        /// <summary>Store account/payment setup problem - send the user to the
+        /// store's own account settings (Android) or tell them where to look (iOS).</summary>
+        OpenStoreAccountSettings,
+
+        /// <summary>Product/configuration problem on our side - offer support email.</summary>
+        ContactSupport
     }
 
     /// <summary>Outcome of a Season Pass purchase or restore attempt. Message is
-    /// safe to show to the user as-is.</summary>
-    public sealed record SeasonPassPurchaseResult(SeasonPassPurchaseStatus Status, string Message);
+    /// safe to show to the user as-is. Action tells the UI which follow-up to offer.</summary>
+    public sealed record SeasonPassPurchaseResult(
+        SeasonPassPurchaseStatus Status,
+        string Message,
+        SeasonPassRecoveryAction Action = SeasonPassRecoveryAction.None);
 
     /// <summary>
     /// Thin wrapper over IRevenueCatBilling for the annual Season Pass
@@ -110,7 +137,8 @@ namespace SaturdayPulse.Services
                         offeringsResult.Error);
                     return new SeasonPassPurchaseResult(
                         SeasonPassPurchaseStatus.Unavailable,
-                        "The Season Pass isn't available right now. Please try again later.");
+                        "The Season Pass isn't available right now. Please try again later.",
+                        SeasonPassRecoveryAction.Retry);
                 }
 
                 var offering = offerings.FirstOrDefault(o => o.Identifier == OfferingId)
@@ -125,7 +153,8 @@ namespace SaturdayPulse.Services
                         PackageId, OfferingId);
                     return new SeasonPassPurchaseResult(
                         SeasonPassPurchaseStatus.Unavailable,
-                        "The Season Pass isn't available right now. Please try again later.");
+                        "The Season Pass isn't available right now. Please try again later.",
+                        SeasonPassRecoveryAction.ContactSupport);
                 }
 
                 var purchase = await _billing.PurchaseProduct(package);
@@ -150,7 +179,8 @@ namespace SaturdayPulse.Services
                         EntitlementId);
                     return new SeasonPassPurchaseResult(
                         SeasonPassPurchaseStatus.Failed,
-                        "Your purchase went through but the Season Pass didn't activate. Please contact support.");
+                        "Your purchase went through but the Season Pass didn't activate. Tap Restore Purchases, or contact support if it still doesn't appear.",
+                        SeasonPassRecoveryAction.RestorePurchases);
                 }
 
                 if (purchase.Error == PurchaseErrorStatus.PurchaseCancelledError)
@@ -162,6 +192,7 @@ namespace SaturdayPulse.Services
 
                 if (purchase.Error == PurchaseErrorStatus.PaymentPendingError)
                 {
+                    _logger.LogInformation("Season Pass purchase pending (PaymentPendingError).");
                     return new SeasonPassPurchaseResult(
                         SeasonPassPurchaseStatus.Pending,
                         "Your payment is pending approval. The Season Pass will activate once it completes.");
@@ -172,18 +203,15 @@ namespace SaturdayPulse.Services
                     "Season Pass purchase failed. Error={Error}",
                     purchase.Error);
 
-                var message = purchase.Error == PurchaseErrorStatus.ProductAlreadyPurchasedError
-                    ? "You already own the Season Pass. Try Restore Purchases."
-                    : "The purchase couldn't be completed. You were not charged. Please try again.";
-
-                return new SeasonPassPurchaseResult(SeasonPassPurchaseStatus.Failed, message);
+                return MapPurchaseFailure(purchase.Error);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error during Season Pass purchase.");
                 return new SeasonPassPurchaseResult(
                     SeasonPassPurchaseStatus.Failed,
-                    "The purchase couldn't be completed. Please try again.");
+                    "The purchase couldn't be completed. Please try again.",
+                    SeasonPassRecoveryAction.Retry);
             }
             finally
             {
@@ -300,11 +328,91 @@ namespace SaturdayPulse.Services
                         loginResult.Error);
                     return new SeasonPassPurchaseResult(
                         SeasonPassPurchaseStatus.Failed,
-                        "We couldn't verify your account with the store. Please try again.");
+                        "We couldn't verify your account with the store. Please try again.",
+                        SeasonPassRecoveryAction.Retry);
                 }
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Maps a non-cancel, non-pending purchase failure to the message and
+        /// follow-up action the UI should offer. Members confirmed in
+        /// Kebechet 9 (PurchaseCancelledError, PaymentPendingError,
+        /// ProductAlreadyPurchasedError, StoreProblemError, NetworkError) are
+        /// compared directly; the remaining RevenueCat codes are matched by
+        /// enum name so this compiles even if the wrapper omits or renames one.
+        /// </summary>
+        private static SeasonPassPurchaseResult MapPurchaseFailure(PurchaseErrorStatus? error)
+        {
+            // Kebechet 9 exposes Error as nullable; null (no code reported)
+            // falls through to the generic Try Again result below.
+            var name = error?.ToString() ?? string.Empty;
+
+            // This store account already holds the subscription (possibly
+            // bought under a different J1S login) - Restore applies it here.
+            if (error == PurchaseErrorStatus.ProductAlreadyPurchasedError
+                || name is "ReceiptAlreadyInUseError" or "ReceiptInUseByOtherSubscriberError")
+            {
+                return new SeasonPassPurchaseResult(
+                    SeasonPassPurchaseStatus.Failed,
+                    "This store account already owns the Season Pass. Tap Restore to apply it to this account.",
+                    SeasonPassRecoveryAction.RestorePurchases);
+            }
+
+            // Store refused to start the purchase: not signed in to the store,
+            // no usable payment method, or in-app purchases restricted.
+            if (name is "PurchaseNotAllowedError" or "PaymentMethodNotAllowedError" or "InsufficientPermissionsError")
+            {
+                return new SeasonPassPurchaseResult(
+                    SeasonPassPurchaseStatus.NotAllowed,
+                    NotAllowedMessage(),
+                    SeasonPassRecoveryAction.OpenStoreAccountSettings);
+            }
+
+            // Transient store or network problem.
+            if (error == PurchaseErrorStatus.StoreProblemError
+                || error == PurchaseErrorStatus.NetworkError
+                || name is "OfflineConnectionError")
+            {
+                return new SeasonPassPurchaseResult(
+                    SeasonPassPurchaseStatus.Failed,
+                    "The store couldn't complete the purchase. Check your connection and try again. If you were charged, tap Restore Purchases.",
+                    SeasonPassRecoveryAction.Retry);
+            }
+
+            // Product or store configuration problem on our side - retrying
+            // won't help.
+            if (name is "ProductNotAvailableForPurchaseError"
+                or "ConfigurationError"
+                or "InvalidCredentialsError"
+                or "PurchaseInvalidError")
+            {
+                return new SeasonPassPurchaseResult(
+                    SeasonPassPurchaseStatus.Unavailable,
+                    "The Season Pass isn't available for purchase right now. Please contact support.",
+                    SeasonPassRecoveryAction.ContactSupport);
+            }
+
+            return new SeasonPassPurchaseResult(
+                SeasonPassPurchaseStatus.Failed,
+                "The purchase couldn't be completed. You were not charged. Please try again.",
+                SeasonPassRecoveryAction.Retry);
+        }
+
+        private static string NotAllowedMessage()
+        {
+#if ANDROID
+            return "Google Play couldn't start the purchase. Make sure you're signed in to the Play Store "
+                 + "and have a valid payment method on your Google account, then try again.";
+#elif IOS
+            return "The App Store couldn't start the purchase. Make sure you're signed in under "
+                 + "Settings > [your name] > Media & Purchases with a valid payment method, and that "
+                 + "In-App Purchases aren't restricted in Settings > Screen Time > Content & Privacy Restrictions.";
+#else
+            return "Purchases aren't allowed on this device.";
+#endif
         }
     }
 }
